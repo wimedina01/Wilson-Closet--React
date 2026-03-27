@@ -1,15 +1,36 @@
 import { useState, useMemo } from 'react'
 import ItemCard from './ItemCard.jsx'
-import { CATEGORIES, CAT_EMOJI } from '../lib/constants.js'
+import { CATEGORIES, CAT_EMOJI, SIZES_ADULT_CLOTHES } from '../lib/constants.js'
 
 export default function ItemGrid({ items, groups, token, activeGroup, onSelectItem }) {
-  const [query,     setQuery]     = useState('')
-  const [activeCat, setActiveCat] = useState('all')
-  const [view,      setView]      = useState('grid')
+  const [query,      setQuery]      = useState('')
+  const [activeCat,  setActiveCat]  = useState('all')
+  const [activeSize, setActiveSize] = useState('all')
+  const [view,       setView]       = useState('grid')
+
+  // Collect all unique sizes from items for dynamic filter
+  const availableSizes = useMemo(() => {
+    const sizeSet = new Set()
+    items.forEach(item => {
+      if (item.size) sizeSet.add(item.size)
+    })
+    // Sort: common clothing sizes first, then numeric, then rest
+    const order = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'One Size']
+    return Array.from(sizeSet).sort((a, b) => {
+      const ia = order.indexOf(a), ib = order.indexOf(b)
+      if (ia !== -1 && ib !== -1) return ia - ib
+      if (ia !== -1) return -1
+      if (ib !== -1) return 1
+      const na = parseFloat(a), nb = parseFloat(b)
+      if (!isNaN(na) && !isNaN(nb)) return na - nb
+      return a.localeCompare(b)
+    })
+  }, [items])
 
   const filtered = useMemo(() => items.filter(item => {
     const gm = activeGroup === 'all' || item.group === activeGroup
     const cm = activeCat  === 'all' || item.category === activeCat
+    const sz = activeSize === 'all' || item.size === activeSize
     const q  = query.toLowerCase()
     const sm = !q
       || item.name.toLowerCase().includes(q)
@@ -17,8 +38,10 @@ export default function ItemGrid({ items, groups, token, activeGroup, onSelectIt
       || item.category.toLowerCase().includes(q)
       || item.colors.some(c => c.toLowerCase().includes(q))
       || item.tags.some(t => t.toLowerCase().includes(q))
-    return gm && cm && sm
-  }), [items, activeGroup, activeCat, query])
+    return gm && cm && sz && sm
+  }), [items, activeGroup, activeCat, activeSize, query])
+
+  const hasActiveFilters = query || activeCat !== 'all' || activeSize !== 'all'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -51,6 +74,29 @@ export default function ItemGrid({ items, groups, token, activeGroup, onSelectIt
           ))}
         </div>
 
+        {/* Size filter row */}
+        {availableSizes.length > 0 && (
+          <div className="filter-row" style={{ marginTop: 2 }}>
+            <button
+              className={`chip ${activeSize === 'all' ? 'active' : ''}`}
+              onClick={() => setActiveSize('all')}
+              style={{ fontSize: 10 }}
+            >
+              All Sizes
+            </button>
+            {availableSizes.map(sz => (
+              <button
+                key={sz}
+                className={`chip ${activeSize === sz ? 'active' : ''}`}
+                onClick={() => setActiveSize(prev => prev === sz ? 'all' : sz)}
+                style={{ fontSize: 10 }}
+              >
+                {sz}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="view-toggle">
           <button className={`vb ${view === 'grid' ? 'active' : ''}`} onClick={() => setView('grid')}>⊞</button>
           <button className={`vb ${view === 'list' ? 'active' : ''}`} onClick={() => setView('list')}>≡</button>
@@ -70,11 +116,11 @@ export default function ItemGrid({ items, groups, token, activeGroup, onSelectIt
                 ? 'Add your first item. Take a photo — AI fills everything automatically.'
                 : 'Try a different search or category.'}
             </div>
-            {(query || activeCat !== 'all') && (
+            {hasActiveFilters && (
               <button
                 className="btn btn-secondary btn-sm"
                 style={{ marginTop: 12 }}
-                onClick={() => { setQuery(''); setActiveCat('all') }}
+                onClick={() => { setQuery(''); setActiveCat('all'); setActiveSize('all') }}
               >Clear filters</button>
             )}
           </div>

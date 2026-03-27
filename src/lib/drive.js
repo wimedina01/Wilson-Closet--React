@@ -203,3 +203,83 @@ export function compressPhoto(dataUrl) {
     img.src = dataUrl
   })
 }
+
+// ─────────────────────────────────────────────────────
+// AI-powered image crop + background replacement
+// Sends image to Claude to detect item bounds, then
+// crops and replaces background with a solid color
+// ─────────────────────────────────────────────────────
+export function processItemPhoto(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = async () => {
+      try {
+        // Compress first for the AI call
+        const MAX = 900
+        let w = img.width, h = img.height
+        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX }
+        if (h > MAX) { w = Math.round(w * MAX / h); h = MAX }
+
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, w, h)
+        const compressed = canvas.toDataURL('image/jpeg', 0.78)
+        const b64 = compressed.split(',')[1]
+
+        // Ask AI for crop bounds + background color
+        const res = await fetch('/.netlify/functions/crop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: b64, mime: 'image/jpeg', width: w, height: h }),
+        })
+        if (!res.ok) throw new Error('Crop API failed')
+        const bounds = await res.json()
+        if (bounds.error) throw new Error(bounds.error.message || 'AI crop failed')
+
+        // Validate and clamp bounds
+        let { x, y, w: bw, h: bh, bgColor } = bounds
+        x = Math.max(0, Math.min(x, w - 1))
+        y = Math.max(0, Math.min(y, h - 1))
+        bw = Math.max(20, Math.min(bw, w - x))
+        bh = Math.max(20, Math.min(bh, h - y))
+        bgColor = bgColor || '#F5F0EB'
+
+        // Add 10% padding around the item
+        const padX = Math.round(bw * 0.1)
+        const padY = Math.round(bh * 0.1)
+        const cropX = Math.max(0, x - padX)
+        const cropY = Math.max(0, y - padY)
+        const cropW = Math.min(w - cropX, bw + padX * 2)
+        const cropH = Math.min(h - cropY, bh + padY * 2)
+
+        // Create the output canvas — square for consistent display
+        const outSize = Math.max(cropW, cropH)
+        const outCanvas = document.createElement('canvas')
+        outCanvas.width = outSize; outCanvas.height = outSize
+        const outCtx = outCanvas.getContext('2d')
+
+        // Fill with solid background color
+        outCtx.fillStyle = bgColor
+        outCtx.fillRect(0, 0, outSize, outSize)
+
+        // Center the cropped item on the background
+        const offsetX = Math.round((outSize - cropW) / 2)
+        const offsetY = Math.round((outSize - cropH) / 2)
+        outCtx.drawImage(canvas, cropX, cropY, cropW, cropH, offsetX, offsetY, cropW, cropH)
+
+        const result = outCanvas.toDataURL('image/jpeg', 0.85)
+        resolve({
+          dataUrl: result,
+          b64: result.split(',')[1],
+          mime: 'image/jpeg',
+          bgColor,
+        })
+      } catch (e) {
+        reject(e)
+      }
+    }
+    img.onerror = () => reject(new Error('Image load failed'))
+    img.src = dataUrl
+  })
+}

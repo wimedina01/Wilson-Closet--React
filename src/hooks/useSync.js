@@ -41,7 +41,8 @@ export function useSync({ gToken, sheetId, items, groups, onUpdateItems, onUpdat
         setTimeout(() => onStatus(null, ''), 2000)
       }
     } catch (e) {
-      console.warn('bgSync error:', e)
+      // Don't spam console on auth errors — handled by expired callback
+      if (e.message !== 'Session expired') console.warn('bgSync error:', e)
     } finally {
       syncing.current = false
     }

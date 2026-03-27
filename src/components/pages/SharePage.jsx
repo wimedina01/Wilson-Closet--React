@@ -1,25 +1,59 @@
+import { useState } from 'react'
+
 export default function SharePage({ groups, items, toast, sheetId, gToken, gUser }) {
   const base = location.origin + location.pathname
+  const [shortLinks, setShortLinks] = useState({})  // groupId → short URL
+  const [shortening, setShortening] = useState({})   // groupId → loading
 
   function buildLink(groupId) {
-    // Embed sheetId AND token so guests can submit requests that reach the owner
-    // Token is short-lived (1hr) but that's fine — links are reshared often
     const params = [groupId, sheetId || '', gToken || '', gUser?.email || ''].join('/')
     return `${base}#gallery/${params}`
   }
 
-  function copyLink(link) {
+  async function shortenLink(groupId) {
+    const fullUrl = buildLink(groupId)
+    setShortening(p => ({ ...p, [groupId]: true }))
+    try {
+      const res = await fetch('/.netlify/functions/shorten', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: fullUrl }),
+      })
+      const data = await res.json()
+      if (data.code) {
+        const short = `${location.origin}/s/${data.code}`
+        setShortLinks(p => ({ ...p, [groupId]: short }))
+        return short
+      }
+    } catch (e) {
+      console.warn('Shorten failed:', e)
+    } finally {
+      setShortening(p => ({ ...p, [groupId]: false }))
+    }
+    return null
+  }
+
+  async function getShareLink(groupId) {
+    if (shortLinks[groupId]) return shortLinks[groupId]
+    const short = await shortenLink(groupId)
+    return short || buildLink(groupId)
+  }
+
+  async function copyLink(groupId) {
+    const link = await getShareLink(groupId)
     navigator.clipboard.writeText(link)
       .then(() => toast('Link copied!', 'success'))
       .catch(() => toast('Copy failed', 'error'))
   }
 
-  function textLink(link, groupName) {
+  async function textLink(groupId, groupName) {
+    const link = await getShareLink(groupId)
     const msg = encodeURIComponent(`Check out my ${groupName} on Wilson Closet: ${link}`)
     window.open(`sms:?body=${msg}`, '_blank')
   }
 
-  function whatsappLink(link, groupName) {
+  async function whatsappLink(groupId, groupName) {
+    const link = await getShareLink(groupId)
     const msg = encodeURIComponent(`Check out my ${groupName} on Wilson Closet: ${link}`)
     window.open(`https://wa.me/?text=${msg}`, '_blank')
   }
@@ -48,7 +82,8 @@ export default function SharePage({ groups, items, toast, sheetId, gToken, gUser
 
         {groups.map(g => {
           const cnt  = items.filter(i => i.group === g.id).length
-          const link = buildLink(g.id)
+          const link = shortLinks[g.id] || null
+          const isShortening = shortening[g.id]
           return (
             <div key={g.id} className="share-card">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -60,12 +95,28 @@ export default function SharePage({ groups, items, toast, sheetId, gToken, gUser
                   <div style={{ fontSize: 10, color: 'var(--ink3)', fontFamily: 'JetBrains Mono,monospace' }}>{cnt} item{cnt !== 1 ? 's' : ''}</div>
                 </div>
               </div>
-              <div className="share-link-box" style={{ fontSize: 9, wordBreak: 'break-all' }}>{link}</div>
+
+              {/* Short link display */}
+              <div className="share-link-box" style={{ fontSize: 11, wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
+                {isShortening ? (
+                  <span style={{ color: 'var(--ink3)', fontStyle: 'italic' }}>Generating short link...</span>
+                ) : link ? (
+                  <span style={{ color: 'var(--neon2)', fontWeight: 600 }}>{link}</span>
+                ) : (
+                  <span style={{ color: 'var(--ink3)', fontSize: 9 }}>Click Copy or Share to generate a short link</span>
+                )}
+              </div>
+
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button className="btn btn-secondary btn-sm" onClick={() => copyLink(link)}>📋 Copy</button>
-                <button className="btn btn-primary btn-sm"   onClick={() => window.open(link, '_blank')}>🔗 Open</button>
-                <button className="btn btn-cyan btn-sm"      onClick={() => textLink(link, g.name)}>💬 Text</button>
-                <button className="btn btn-secondary btn-sm" onClick={() => whatsappLink(link, g.name)}>📱 WhatsApp</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => copyLink(g.id)} disabled={isShortening}>
+                  {isShortening ? '...' : '📋 Copy'}
+                </button>
+                <button className="btn btn-primary btn-sm" onClick={async () => {
+                  const l = await getShareLink(g.id)
+                  window.open(l, '_blank')
+                }} disabled={isShortening}>🔗 Open</button>
+                <button className="btn btn-cyan btn-sm" onClick={() => textLink(g.id, g.name)} disabled={isShortening}>💬 Text</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => whatsappLink(g.id, g.name)} disabled={isShortening}>📱 WhatsApp</button>
               </div>
             </div>
           )

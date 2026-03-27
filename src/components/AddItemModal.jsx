@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { COLORS, TAGS_SUGGEST, CATEGORIES,
          SIZES_ADULT_CLOTHES, SIZES_KIDS_CLOTHES,
          SIZES_ADULT_SHOES,   SIZES_KIDS_SHOES } from '../lib/constants.js'
-import { compressPhoto, uploadToDrive } from '../lib/drive.js'
+import { compressPhoto, uploadToDrive, processItemPhoto } from '../lib/drive.js'
 
 export default function AddItemModal({ item: editItem, groups, locations, token, onSave, onClose, toast }) {
   const isEdit = !!editItem
@@ -27,20 +27,39 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
   const [aiText,   setAiText]   = useState(editItem?.description || '')
   const [showAI,   setShowAI]   = useState(!!editItem?.description)
   const [saving,   setSaving]   = useState(false)
+  const [processing, setProcessing] = useState(false)
 
   const camRef = useRef(); const galRef = useRef()
+  const rawPhotoRef = useRef(null)  // keep raw photo for AI crop
 
   async function onPhotoSelected(e) {
     const file = e.target.files[0]; if (!file) return
     e.target.value = ''
     const reader = new FileReader()
     reader.onload = async evt => {
+      rawPhotoRef.current = evt.target.result  // keep raw for AI crop
       const { dataUrl, b64, mime } = await compressPhoto(evt.target.result)
       setPhoto(dataUrl); setPhotoB64(b64); setPhotoMime(mime)
       setShowAI(true); setAiText('')
       analyze(b64, mime)
     }
     reader.readAsDataURL(file)
+  }
+
+  async function enhancePhoto() {
+    if (!rawPhotoRef.current && !photo) return
+    setProcessing(true)
+    try {
+      const result = await processItemPhoto(rawPhotoRef.current || photo)
+      setPhoto(result.dataUrl)
+      setPhotoB64(result.b64)
+      setPhotoMime(result.mime)
+      toast('Photo enhanced with AI crop!', 'success')
+    } catch (e) {
+      toast('Photo enhancement failed: ' + (e.message || 'unknown error'), 'error')
+    } finally {
+      setProcessing(false)
+    }
   }
 
   async function analyze(b64, mime) {
@@ -140,6 +159,7 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
                 <>
                   <img src={photo} alt="item" />
                   {analyzing && <div className="pzone-loading"><div className="big-spin" /><p style={{ fontSize: 11, color: 'var(--ink2)' }}>AI analyzing…</p></div>}
+                  {processing && <div className="pzone-loading"><div className="big-spin" /><p style={{ fontSize: 11, color: 'var(--cyan)' }}>Cropping & enhancing…</p></div>}
                 </>
               ) : (
                 <>
@@ -148,10 +168,21 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
                 </>
               )}
             </div>
-            <div style={{ marginTop: 7, display: 'flex', gap: 6 }}>
+            <div style={{ marginTop: 7, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button className="btn btn-secondary btn-sm" onClick={() => camRef.current.click()}>📷 Camera</button>
               <button className="btn btn-secondary btn-sm" onClick={() => galRef.current.click()}>🖼 Gallery</button>
-              {photo && <button className="btn btn-ghost btn-sm" onClick={() => { setPhoto(null); setPhotoB64(null) }}>✕ Remove</button>}
+              {photo && !processing && (
+                <button className="btn btn-cyan btn-sm" onClick={enhancePhoto} title="AI crops the item and adds a clean background">
+                  ✦ Enhance
+                </button>
+              )}
+              {processing && (
+                <button className="btn btn-cyan btn-sm" disabled>
+                  <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid var(--cyan)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin .7s linear infinite', verticalAlign: 'middle', marginRight: 4 }} />
+                  Processing…
+                </button>
+              )}
+              {photo && <button className="btn btn-ghost btn-sm" onClick={() => { setPhoto(null); setPhotoB64(null); rawPhotoRef.current = null }}>✕ Remove</button>}
             </div>
             <input ref={camRef} type="file" accept="image/*" capture="environment" onChange={onPhotoSelected} />
             <input ref={galRef} type="file" accept="image/*" onChange={onPhotoSelected} />

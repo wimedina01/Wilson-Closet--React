@@ -88,7 +88,65 @@ export default function App() {
   const [galleryOwnerEmail]               = useState(() => parseGalleryHash().ownerEmail)
 
   const { toasts, toast } = useToast()
-  const pendingItems = useRef([])  // items saved offline
+  const pendingItems = useRef(tryParse(ls.get('wc_pending'), []))  // items saved offline
+
+  // Keep pending items in localStorage so they survive page reloads
+  function addPendingItem(item) {
+    pendingItems.current = [...pendingItems.current, item]
+    ls.setJ('wc_pending', pendingItems.current)
+  }
+  function clearPendingItems() {
+    pendingItems.current = []
+    ls.rm('wc_pending')
+  }
+
+  // ── Force sync offline items + photos
+  async function syncOfflineItems() {
+    if (!gToken || !sheetId) return
+    // Gather unsynced items: from pendingItems ref + items not marked sheetSynced
+    const pending = [...pendingItems.current]
+    const unsynced = items.filter(i => !i.sheetSynced && !pending.find(p => p.id === i.id))
+    const all = [...pending, ...unsynced]
+    if (!all.length) return
+
+    showSync('syncing', `Syncing ${all.length} offline items…`)
+    let syncedCount = 0
+    for (const it of all) {
+      try {
+        // If item has a local photo but no drivePhotoUrl, upload the photo first
+        if (it.photo && !it.drivePhotoUrl && gToken) {
+          try {
+            const { compressPhoto, uploadToDrive } = await import('./lib/drive.js')
+            const { b64, mime } = await compressPhoto(it.photo)
+            const dr = await uploadToDrive(b64, mime, it.name, gToken)
+            if (dr) {
+              it.drivePhotoUrl = dr.viewUrl
+              it.driveThumb = dr.directUrl
+              it.fileId = dr.fileId
+            }
+          } catch {}
+        }
+        await upsertItem(sheetId, it, groups, gToken)
+        it.sheetSynced = true
+        syncedCount++
+      } catch (e) {
+        console.warn('syncOfflineItems: failed for', it.id, e)
+      }
+    }
+    if (syncedCount > 0) {
+      setItems(prev => prev.map(i => {
+        const synced = all.find(s => s.id === i.id && s.sheetSynced)
+        return synced ? { ...i, sheetSynced: true, drivePhotoUrl: synced.drivePhotoUrl || i.drivePhotoUrl, driveThumb: synced.driveThumb || i.driveThumb, fileId: synced.fileId || i.fileId } : i
+      }))
+      clearPendingItems()
+      toast(`✓ ${syncedCount} offline item${syncedCount > 1 ? 's' : ''} synced`, 'success')
+      showSync('synced', `✓ ${syncedCount} items synced`)
+      setTimeout(hideSync, 3000)
+    } else {
+      showSync('error', 'Sync failed — try again')
+      setTimeout(hideSync, 3000)
+    }
+  }
 
   // ── Sync status helpers
   const showSync = useCallback((state, text) => { setSyncState(state); setSyncText(text) }, [])
@@ -109,14 +167,47 @@ export default function App() {
   const [installed,     setInstalled]     = useState(false)
   const [showInstall,   setShowInstall]   = useState(false)
 
+  // ── Connection / session status: 'connected' | 'disconnected' | 'expired'
+  const [connStatus, setConnStatus] = useState(() => gToken ? 'connected' : 'disconnected')
+  const tokenHealthRef = useRef(null)
+
   // ── Handle token expiry (called by drive.js when 401 received)
+  // Instead of immediately clearing the token (which forces re-login),
+  // mark session as expired and let user decide when to re-auth
   useEffect(() => {
     setExpiredCallback(() => {
-      setGToken(null); setGUser(null)
-      ls.rm('wc_token'); ls.rm('wc_user')
-      toast('Session expired — please sign in again', 'error')
+      setConnStatus('expired')
+      toast('Session expired — tap the status indicator to reconnect', 'error')
     })
   }, [toast])
+
+  // ── Proactive token health check — validate token every 10 minutes
+  // This prevents the jarring "constant timeout → re-login" cycle
+  useEffect(() => {
+    if (!gToken) { setConnStatus('disconnected'); return }
+    async function checkToken() {
+      try {
+        const res = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=' + gToken)
+        if (res.ok) {
+          const info = await res.json()
+          // If token expires in less than 5 minutes, mark as expiring
+          if (info.expires_in && info.expires_in < 300) {
+            setConnStatus('expired')
+          } else {
+            setConnStatus('connected')
+          }
+        } else {
+          setConnStatus('expired')
+        }
+      } catch {
+        // Network error — don't mark as expired, just offline
+        if (!navigator.onLine) setConnStatus('disconnected')
+      }
+    }
+    checkToken()
+    tokenHealthRef.current = setInterval(checkToken, 10 * 60 * 1000) // every 10 min
+    return () => clearInterval(tokenHealthRef.current)
+  }, [gToken])
 
   // ── Handle clear-all event from SettingsPage
   useEffect(() => {
@@ -149,8 +240,14 @@ export default function App() {
   // ── Background sync hook
   // ── PWA: online/offline detection + install prompt
   useEffect(() => {
-    const goOnline  = () => { setIsOnline(true);  toast('Back online', 'success') }
-    const goOffline = () => { setIsOnline(false); toast("You're offline — changes saved locally", "info") }
+    const goOnline  = () => {
+      setIsOnline(true)
+      if (gToken) setConnStatus('connected')
+      toast('Back online', 'success')
+      // Auto-sync pending items when reconnecting
+      syncOfflineItems()
+    }
+    const goOffline = () => { setIsOnline(false); setConnStatus('disconnected'); toast("You're offline — changes saved locally", "info") }
     const onInstall = () => { setInstallReady(true); setShowInstall(true) }
     const onInstalled = () => { setInstalled(true); setInstallReady(false); setShowInstall(false); toast('✓ Wilson Closet installed!', 'success') }
     const onSyncNow = () => bgSync()
@@ -285,7 +382,7 @@ export default function App() {
       if (pendingItems.current.length) {
         for (const it of pendingItems.current) await upsertItem(sid, it, groups, token)
         toast(`✓ ${pendingItems.current.length} offline items synced`, 'success')
-        pendingItems.current = []
+        clearPendingItems()
       }
     } catch (e) {
       showSync('error', 'Load failed: ' + e.message)
@@ -352,14 +449,14 @@ export default function App() {
         } catch {
           showSync('error', 'Saved locally — sync failed')
           setTimeout(hideSync, 3000)
-          pendingItems.current.push(item)
+          addPendingItem(item)
         }
       } else {
-        pendingItems.current.push(item)
+        addPendingItem(item)
         setShowPicker(true)
       }
     } else {
-      pendingItems.current.push(item)
+      addPendingItem(item)
     }
   }
 
@@ -541,7 +638,40 @@ export default function App() {
           {/* Mobile topbar */}
           <div className="topbar">
             <button className="ib" onClick={() => setSidebarOpen(true)}>☰</button>
-            <div className="tb-logo">Wilson <em>Closet</em></div>
+            <div className="tb-logo">
+              Wilson <em>Closet</em>
+              {/* Connection status indicator */}
+              {gToken && (
+                <button
+                  onClick={connStatus === 'expired' ? launchOAuth : undefined}
+                  title={
+                    connStatus === 'connected' ? 'Connected to Google' :
+                    connStatus === 'expired' ? 'Session expired — tap to reconnect' :
+                    'Offline'
+                  }
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    marginLeft: 8, padding: '2px 8px', borderRadius: 99,
+                    border: 'none', cursor: connStatus === 'expired' ? 'pointer' : 'default',
+                    fontSize: 9, fontWeight: 600, fontFamily: 'JetBrains Mono,monospace',
+                    verticalAlign: 'middle',
+                    background: connStatus === 'connected' ? 'var(--success-lt)' :
+                               connStatus === 'expired' ? 'var(--danger-lt)' : 'var(--gold-lt)',
+                    color: connStatus === 'connected' ? 'var(--success)' :
+                           connStatus === 'expired' ? 'var(--danger)' : 'var(--gold)',
+                  }}
+                >
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: connStatus === 'connected' ? 'var(--success)' :
+                               connStatus === 'expired' ? 'var(--danger)' : 'var(--gold)',
+                    animation: connStatus === 'connected' ? 'none' : 'pulse 2s infinite',
+                  }} />
+                  {connStatus === 'connected' ? 'Live' :
+                   connStatus === 'expired' ? 'Reconnect' : 'Offline'}
+                </button>
+              )}
+            </div>
             <button className="ib" onClick={() => goPage('notifications')} style={{ position: 'relative' }}>
               🔔
               {unreadCount > 0 && (
@@ -588,6 +718,25 @@ export default function App() {
                   </div>
                 ))}
               </div>
+
+              {/* Force sync banner for unsynced items */}
+              {items.some(i => !i.sheetSynced) && gToken && sheetId && (
+                <div style={{
+                  margin: '0 16px 12px', padding: '10px 14px',
+                  background: 'var(--gold-lt)', border: '1px solid rgba(255,181,71,.2)',
+                  borderRadius: 'var(--r)', display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)' }}>
+                      {items.filter(i => !i.sheetSynced).length} item{items.filter(i => !i.sheetSynced).length > 1 ? 's' : ''} not synced
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--ink3)' }}>Items and photos saved locally will be uploaded</div>
+                  </div>
+                  <button className="btn btn-primary btn-sm" onClick={syncOfflineItems} style={{ flexShrink: 0 }}>
+                    ⬆ Force Sync
+                  </button>
+                </div>
+              )}
 
               <ItemGrid
                 items={items} groups={groups} token={gToken}
