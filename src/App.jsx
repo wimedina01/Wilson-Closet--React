@@ -418,6 +418,7 @@ export default function App() {
           onGoogleAuth={toggleGoogleAuth}
           onAddGroup={() => setShowGroup(true)}
           isOpen={sidebarOpen}
+          unreadCount={unreadCount}
         />
 
         {/* Mobile overlay */}

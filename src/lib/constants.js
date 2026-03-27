@@ -3,8 +3,8 @@ export const CLIENT_ID = '255269326633-fk0dsvgfqtlapir3vb73k7tdj4cgd63h.apps.goo
 export const SHEET_TAB    = 'All Items'
 export const SETTINGS_TAB = 'Settings'
 export const SHEET_HDR    = [
-  'ID','Name','Category','Group','Brand','Size','Colors',
-  'Location','Tags','Description','Photo URL','Photo Preview','Date Added','On Loan To'
+  'ID','Name','Category','Group','Group ID','Brand','Size','Colors',
+  'Location','Tags','Description','Photo URL','Photo Preview','Date Added','On Loan To','Loan Log'
 ]
 export const POLL_MS = 20000   // 20s — faster for real-time feel
 

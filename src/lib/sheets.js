@@ -147,46 +147,94 @@ export function makeRow(item, groups) {
   const thumb    = item.driveThumb || ''
   const preview  = thumb ? `=IMAGE("${thumb}")` : ''
   return [
-    item.id, item.name, item.category, g ? g.name : '—',
+    item.id, item.name, item.category,
+    g ? g.name : '—',          // col D: Group name (human readable)
+    item.group || '',           // col E: Group ID (for reliable re-sync)
     item.brand || '', item.size || '',
     item.colors.join(', '), item.location || '',
     item.tags.join(', '), item.description || '',
     photoUrl, preview,
     new Date(item.addedAt).toLocaleDateString(),
-    item.loanedTo || '',
+    item.loanedTo || '',        // col O: current borrower name
+    item.loanLog || '',         // col P: audit log e.g. "LoanOut: 2025-01-15 14:32 | LoanIn: 2025-01-20 09:00"
   ]
 }
 
 export function rowToItem(row, groups, existingMap) {
   const ex = existingMap[row[0]]
-  const rawUrl = (row[10] || '').trim()
+
+  // Detect whether this sheet has the new Group ID column (col E)
+  // Old sheets: col4=Brand. New sheets: col4=GroupID (starts with 'g' or is empty)
+  // We detect by checking if row[4] looks like a group ID or a brand name
+  const hasGroupIdCol = row[4] === '' || /^g[0-9]/.test(row[4] || '') || groups.some(g => g.id === row[4])
+
+  let groupId, brandVal, sizeVal, colorsVal, locationVal, tagsVal, descVal, rawUrl, addedAtVal, loanedToVal, loanLogVal
+
+  if (hasGroupIdCol) {
+    // New schema: ID,Name,Category,GroupName,GroupID,Brand,Size,Colors,Location,Tags,Desc,PhotoURL,Preview,DateAdded,LoanedTo,LoanLog
+    groupId     = resolveGroupId(row[3] || '', row[4] || '', groups)
+    brandVal    = row[5] || ''
+    sizeVal     = row[6] || ''
+    colorsVal   = row[7] || ''
+    locationVal = row[8] || ''
+    tagsVal     = row[9] || ''
+    descVal     = row[10] || ''
+    rawUrl      = (row[11] || '').trim()
+    addedAtVal  = row[13] || new Date().toISOString()
+    loanedToVal = row[14] || ''
+    loanLogVal  = row[15] || ''
+  } else {
+    // Old schema (no GroupID col): ID,Name,Category,Group,Brand,Size,Colors,Location,Tags,Desc,PhotoURL,Preview,DateAdded,LoanedTo
+    groupId     = resolveGroupId(row[3] || '', '', groups)
+    brandVal    = row[4] || ''
+    sizeVal     = row[5] || ''
+    colorsVal   = row[6] || ''
+    locationVal = row[7] || ''
+    tagsVal     = row[8] || ''
+    descVal     = row[9] || ''
+    rawUrl      = (row[10] || '').trim()
+    addedAtVal  = row[12] || new Date().toISOString()
+    loanedToVal = row[13] || ''
+    loanLogVal  = row[14] || ''
+  }
+
   const hm = rawUrl.match(/=HYPERLINK\("([^"]+)"/i)
   const drivePhotoUrl = hm ? hm[1] : (rawUrl && !rawUrl.startsWith('=') ? rawUrl : null)
-  const fileId = extractFileId(drivePhotoUrl)
+  const fileId    = extractFileId(drivePhotoUrl)
   const driveThumb = fileId ? `/.netlify/functions/img?id=${fileId}` : null
+
   return {
-    id:          row[0],
-    name:        row[1] || '',
-    category:    row[2] || 'Other',
-    group:       resolveGroupId(row[3] || '', groups),
-    brand:       row[4] || '',
-    size:        row[5] || '',
-    colors:      row[6] ? row[6].split(', ').filter(Boolean) : [],
-    location:    row[7] || '',
-    tags:        row[8] ? row[8].split(', ').filter(Boolean) : [],
-    description: row[9] || '',
+    id:           row[0],
+    name:         row[1] || '',
+    category:     row[2] || 'Other',
+    group:        groupId,
+    brand:        brandVal,
+    size:         sizeVal,
+    colors:       colorsVal ? colorsVal.split(', ').filter(Boolean) : [],
+    location:     locationVal,
+    tags:         tagsVal ? tagsVal.split(', ').filter(Boolean) : [],
+    description:  descVal,
     drivePhotoUrl, driveThumb, fileId,
-    addedAt:     row[12] || new Date().toISOString(),
-    loanedTo:    row[13] || '',
-    photo:       ex?.photo || null,
-    sheetSynced: true,
+    addedAt:      addedAtVal,
+    loanedTo:     loanedToVal,
+    loanLog:      loanLogVal,
+    photo:        ex?.photo || null,
+    sheetSynced:  true,
   }
 }
 
-function resolveGroupId(name, groups) {
-  if (!name) return groups[0]?.id || 'g1'
-  const g = groups.find(x => x.name.toLowerCase() === name.toLowerCase())
-  return g?.id || groups[0]?.id || 'g1'
+function resolveGroupId(name, id, groups) {
+  // Try exact ID match first — always reliable
+  if (id) {
+    const byId = groups.find(x => x.id === id)
+    if (byId) return byId.id
+  }
+  // Fall back to name match
+  if (name && name !== '—') {
+    const byName = groups.find(x => x.name.toLowerCase() === name.trim().toLowerCase())
+    if (byName) return byName.id
+  }
+  return groups[0]?.id || 'g1'
 }
 
 export async function upsertItem(sheetId, item, groups, token) {
@@ -195,9 +243,9 @@ export async function upsertItem(sheetId, item, groups, token) {
   const row = makeRow(item, groups)
   const idx = colA.findIndex(r => r[0] === item.id)
   if (idx >= 1) {
-    await sheetPut(sheetId, `${SHEET_TAB}!A${idx+1}:N${idx+1}`, [row], token)
+    await sheetPut(sheetId, `${SHEET_TAB}!A${idx+1}:P${idx+1}`, [row], token)
   } else {
-    await sheetAppend(sheetId, `${SHEET_TAB}!A:N`, [row], token)
+    await sheetAppend(sheetId, `${SHEET_TAB}!A:P`, [row], token)
   }
   return true
 }
@@ -219,7 +267,7 @@ export async function deleteItem(sheetId, itemId, token) {
 }
 
 export async function pullAllItems(sheetId, groups, existingItems, token) {
-  const rows = await sheetRead(sheetId, `${SHEET_TAB}!A2:N`, token)
+  const rows = await sheetRead(sheetId, `${SHEET_TAB}!A2:P`, token)
   if (rows === null) throw new Error('Could not read sheet')
   const existingMap = {}
   existingItems.forEach(i => { existingMap[i.id] = i })

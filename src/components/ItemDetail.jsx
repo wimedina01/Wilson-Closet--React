@@ -21,8 +21,25 @@ export default function ItemDetail({ item, groups, token, onClose, onEdit, onDel
           {item.description && <div className="d-desc">{item.description}</div>}
           {g && <div style={{ marginBottom: 8 }}><span className="group-badge">{g.emoji} {g.name}</span></div>}
           {item.loanedTo && (
-            <div style={{ marginBottom: 10 }}>
+            <div style={{ marginBottom: 10, display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
               <span className="loan-info">📤 On loan to: {item.loanedTo}</span>
+              {item.loanedAt && (
+                <span style={{ fontSize: 9, color: 'var(--ink3)', fontFamily: 'JetBrains Mono,monospace' }}>
+                  since {new Date(item.loanedAt).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+          )}
+          {item.loanLog && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5, fontFamily: 'JetBrains Mono,monospace' }}>Loan History</div>
+              <div style={{ background: 'var(--bg2)', borderRadius: 'var(--r)', padding: '8px 11px', border: '1px solid var(--border)' }}>
+                {item.loanLog.split(' | ').map((entry, i) => (
+                  <div key={i} style={{ fontSize: 10, color: entry.startsWith('LoanOut') ? 'var(--gold)' : 'var(--success)', fontFamily: 'JetBrains Mono,monospace', padding: '2px 0', lineHeight: 1.5 }}>
+                    {entry.startsWith('LoanOut') ? '📤 ' : '✅ '}{entry}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

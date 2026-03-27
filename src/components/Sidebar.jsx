@@ -1,6 +1,6 @@
 // Categories removed from sidebar — handled by ItemGrid chips
 
-export default function Sidebar({ groups, items, gToken, gUser, activePage, activeGroup, onPage, onGroup, onGoogleAuth, onAddGroup, isOpen }) {
+export default function Sidebar({ groups, items, gToken, gUser, activePage, activeGroup, onPage, onGroup, onGoogleAuth, onAddGroup, isOpen, unreadCount }) {
   return (
     <nav className={`sidebar ${isOpen ? 'open' : ''}`}>
       <div className="sb-logo">
@@ -30,6 +30,9 @@ export default function Sidebar({ groups, items, gToken, gUser, activePage, acti
           <button key={id} className={`nav-btn ${activePage === id ? 'active' : ''}`} onClick={() => onPage(id)}>
             <span className="ni" style={{ fontFamily: 'monospace', fontSize: 13 }}>{icon}</span>
             {label}
+            {id === 'notifications' && unreadCount > 0 && (
+              <span className="nbadge">{unreadCount}</span>
+            )}
           </button>
         ))}
 
