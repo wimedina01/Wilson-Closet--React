@@ -3,7 +3,7 @@ import { pushSettings, pullSettings, formatSheet, deleteSpreadsheet } from '../.
 import { gDelete } from '../../lib/drive.js'
 import { ls } from '../../lib/storage.js'
 
-export default function SettingsPage({
+export default function SettingsPage({ isInstalled, onInstall,
   gToken, gUser, sheetId,
   groups, setGroups,
   locations, setLocations,
@@ -197,6 +197,37 @@ export default function SettingsPage({
             </div>
           </div>
         )}
+
+        {/* PWA Install */}
+        <div className="ss">
+          <div className="ss-title">Install App</div>
+          {isInstalled ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="pill pill-green">✓ Installed</span>
+              <span style={{ fontSize: 12, color: 'var(--ink3)' }}>Wilson Closet is installed on this device</span>
+            </div>
+          ) : (
+            <>
+              <p style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.6, marginBottom: 10 }}>
+                Install Wilson Closet on your home screen for a native app experience — works offline, no browser bar, instant launch.
+              </p>
+              {onInstall ? (
+                <button className="btn btn-primary btn-sm" onClick={onInstall}>
+                  ⬇ Install Wilson Closet
+                </button>
+              ) : (
+                <div style={{ background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '10px 13px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--neon2)', marginBottom: 6, fontFamily: 'JetBrains Mono,monospace', textTransform: 'uppercase' }}>iOS — Safari</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink2)', lineHeight: 1.8 }}>
+                    1. Tap the <strong>Share</strong> button (□↑) in Safari<br/>
+                    2. Scroll down and tap <strong>Add to Home Screen</strong><br/>
+                    3. Tap <strong>Add</strong> — done!
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Drive folder info */}
         <div className="ss">

@@ -103,6 +103,12 @@ export default function App() {
   // ── Unread badge
   const unreadCount = notifications.filter(n => !n.read).length
 
+  // ── PWA state
+  const [isOnline,      setIsOnline]      = useState(() => navigator.onLine)
+  const [installReady,  setInstallReady]  = useState(() => !!window._installPrompt)
+  const [installed,     setInstalled]     = useState(false)
+  const [showInstall,   setShowInstall]   = useState(false)
+
   // ── Handle token expiry (called by drive.js when 401 received)
   useEffect(() => {
     setExpiredCallback(() => {
@@ -141,6 +147,36 @@ export default function App() {
   }, []) // eslint-disable-line
 
   // ── Background sync hook
+  // ── PWA: online/offline detection + install prompt
+  useEffect(() => {
+    const goOnline  = () => { setIsOnline(true);  toast('Back online', 'success') }
+    const goOffline = () => { setIsOnline(false); toast('You're offline — changes saved locally', 'info') }
+    const onInstall = () => { setInstallReady(true); setShowInstall(true) }
+    const onInstalled = () => { setInstalled(true); setInstallReady(false); setShowInstall(false); toast('✓ Wilson Closet installed!', 'success') }
+    const onSyncNow = () => bgSync()
+
+    window.addEventListener('online',  goOnline)
+    window.addEventListener('offline', goOffline)
+    window.addEventListener('wc-install-available', onInstall)
+    window.addEventListener('wc-installed', onInstalled)
+    window.addEventListener('wc-sync-now',  onSyncNow)
+    return () => {
+      window.removeEventListener('online',  goOnline)
+      window.removeEventListener('offline', goOffline)
+      window.removeEventListener('wc-install-available', onInstall)
+      window.removeEventListener('wc-installed', onInstalled)
+      window.removeEventListener('wc-sync-now',  onSyncNow)
+    }
+  }, [bgSync, toast])
+
+  async function triggerInstall() {
+    if (!window._installPrompt) return
+    window._installPrompt.prompt()
+    const { outcome } = await window._installPrompt.userChoice
+    if (outcome === 'accepted') { window._installPrompt = null; setInstallReady(false) }
+    setShowInstall(false)
+  }
+
   // ── Real-time notification polling via Netlify poll function
   const lastNotifCheck = useRef(new Date(Date.now() - 24*60*60*1000).toISOString())
   useEffect(() => {
@@ -389,6 +425,43 @@ export default function App() {
     return (
       <>
         <ToastContainer toasts={toasts} />
+
+      {/* Offline banner */}
+      {!isOnline && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 600,
+          background: 'rgba(255,92,138,.15)', backdropFilter: 'blur(8px)',
+          borderBottom: '1px solid rgba(255,92,138,.3)',
+          padding: '8px 16px', textAlign: 'center',
+          fontSize: 11, fontWeight: 600, color: 'var(--danger)',
+          fontFamily: 'JetBrains Mono,monospace', letterSpacing: '.5px',
+        }}>
+          ◉ Offline — your changes are saved locally and will sync when you reconnect
+        </div>
+      )}
+
+      {/* Install prompt banner */}
+      {showInstall && !installed && (
+        <div style={{
+          position: 'fixed', bottom: 80, left: 12, right: 12, zIndex: 500,
+          background: 'rgba(10,10,16,.97)', backdropFilter: 'blur(20px)',
+          border: '1px solid var(--border-glow)', borderRadius: 'var(--r-lg)',
+          padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12,
+          boxShadow: 'var(--sh-neon)',
+        }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
+            <img src="/icon-192.png" alt="icon" style={{ width: '100%', height: '100%' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Install Wilson Closet</div>
+            <div style={{ fontSize: 11, color: 'var(--ink3)' }}>Add to your home screen for the full app experience</div>
+          </div>
+          <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowInstall(false)} style={{ padding: '5px 8px' }}>Later</button>
+            <button className="btn btn-primary btn-sm" onClick={triggerInstall}>Install</button>
+          </div>
+        </div>
+      )}
         <GalleryPage
           groupId={galleryId}
           sheetId={gallerySheetId || sheetId}
@@ -407,6 +480,43 @@ export default function App() {
   return (
     <>
       <ToastContainer toasts={toasts} />
+
+      {/* Offline banner */}
+      {!isOnline && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 600,
+          background: 'rgba(255,92,138,.15)', backdropFilter: 'blur(8px)',
+          borderBottom: '1px solid rgba(255,92,138,.3)',
+          padding: '8px 16px', textAlign: 'center',
+          fontSize: 11, fontWeight: 600, color: 'var(--danger)',
+          fontFamily: 'JetBrains Mono,monospace', letterSpacing: '.5px',
+        }}>
+          ◉ Offline — your changes are saved locally and will sync when you reconnect
+        </div>
+      )}
+
+      {/* Install prompt banner */}
+      {showInstall && !installed && (
+        <div style={{
+          position: 'fixed', bottom: 80, left: 12, right: 12, zIndex: 500,
+          background: 'rgba(10,10,16,.97)', backdropFilter: 'blur(20px)',
+          border: '1px solid var(--border-glow)', borderRadius: 'var(--r-lg)',
+          padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12,
+          boxShadow: 'var(--sh-neon)',
+        }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
+            <img src="/icon-192.png" alt="icon" style={{ width: '100%', height: '100%' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Install Wilson Closet</div>
+            <div style={{ fontSize: 11, color: 'var(--ink3)' }}>Add to your home screen for the full app experience</div>
+          </div>
+          <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowInstall(false)} style={{ padding: '5px 8px' }}>Later</button>
+            <button className="btn btn-primary btn-sm" onClick={triggerInstall}>Install</button>
+          </div>
+        </div>
+      )}
 
       <div className="shell">
         {/* Sidebar */}
@@ -507,6 +617,8 @@ export default function App() {
           {page === 'settings' && (
             <SettingsPage
               gToken={gToken} gUser={gUser} sheetId={sheetId}
+              isInstalled={installed}
+              onInstall={installReady ? triggerInstall : null}
               groups={groups} setGroups={async updated => {
                 setGroups(updated)
                 ls.setJ('wc_groups', updated)
