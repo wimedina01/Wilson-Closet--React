@@ -150,7 +150,7 @@ export default function App() {
   // ── PWA: online/offline detection + install prompt
   useEffect(() => {
     const goOnline  = () => { setIsOnline(true);  toast('Back online', 'success') }
-    const goOffline = () => { setIsOnline(false); toast('You're offline — changes saved locally', 'info') }
+    const goOffline = () => { setIsOnline(false); toast("You're offline — changes saved locally", "info") }
     const onInstall = () => { setInstallReady(true); setShowInstall(true) }
     const onInstalled = () => { setInstalled(true); setInstallReady(false); setShowInstall(false); toast('✓ Wilson Closet installed!', 'success') }
     const onSyncNow = () => bgSync()
