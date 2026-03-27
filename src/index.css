@@ -68,7 +68,6 @@ body{
   background:var(--bg);
   color:var(--ink);
   height:100%;
-  /* Do NOT use position:fixed — it breaks iOS child scroll */
   overflow:hidden;
 }
 #root{height:100%;}
@@ -208,7 +207,7 @@ button{cursor:pointer;}
 .g-btn.connected{border-color:var(--success);color:var(--success);background:var(--success-lt);}
 
 /* ── MAIN ─────────────────────────────────────── */
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
 
 .topbar{
   display:none;
@@ -251,7 +250,7 @@ button{cursor:pointer;}
 .page{
   display:flex;flex-direction:column;
   flex:1;min-height:0;
-  overflow:hidden;
+  /* No overflow:hidden here — .cs is the scroll container */
 }
 .ph{
   padding:22px 24px 0;flex-shrink:0;
@@ -325,12 +324,13 @@ button{cursor:pointer;}
 /* Content scroll */
 .cs{
   flex:1;
-  overflow-y:auto;
+  overflow-y:scroll;          /* scroll not auto — more reliable on iOS */
   overflow-x:hidden;
   padding:14px 24px 40px;
   -webkit-overflow-scrolling:touch;
-  /* iOS Safari: must have explicit height or min-height:0 for scroll */
   min-height:0;
+  /* iOS Safari: flex children need explicit 0 to allow overflow */
+  height:0;
 }
 @media(max-width:600px){
   .cs{padding:10px 14px 100px;}
