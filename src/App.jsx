@@ -181,12 +181,20 @@ export default function App() {
 
   const { bgSync } = useSync({
     gToken, sheetId, items, groups,
-    onUpdate: newItems => {
+    onUpdateItems: newItems => {
       setItems(newItems)
       setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
     },
+    onUpdateSettings: settings => {
+      // Apply settings pulled during background sync
+      if (settings.groups    && Array.isArray(settings.groups)    && settings.groups.length)    {
+        setGroups(settings.groups); ls.setJ('wc_groups', settings.groups)
+      }
+      if (settings.locations && Array.isArray(settings.locations) && settings.locations.length) {
+        setLocations(settings.locations); ls.setJ('wc_locs', settings.locations)
+      }
+    },
     onStatus: showSync,
-    toast,
   })
 
   // ── Fetch Google user info
@@ -215,9 +223,22 @@ export default function App() {
       await ensureSheetHeader(sid, token)
       await ensureSettingsTab(sid, token)
       const settings = await pullSettings(sid, token)
-      if (settings.groups    && Array.isArray(settings.groups))    { setGroups(settings.groups);       ls.setJ('wc_groups', settings.groups) }
-      if (settings.locations && Array.isArray(settings.locations)) { setLocations(settings.locations); ls.setJ('wc_locs',   settings.locations) }
-      const loaded = await pullAllItems(sid, groups, items, token)
+
+      // Capture resolved groups/locations BEFORE calling pullAllItems
+      // so group names resolve correctly (React state updates are async)
+      let resolvedGroups    = groups
+      let resolvedLocations = locations
+      if (settings.groups    && Array.isArray(settings.groups)    && settings.groups.length)    {
+        resolvedGroups = settings.groups
+        setGroups(settings.groups); ls.setJ('wc_groups', settings.groups)
+      }
+      if (settings.locations && Array.isArray(settings.locations) && settings.locations.length) {
+        resolvedLocations = settings.locations
+        setLocations(settings.locations); ls.setJ('wc_locs', settings.locations)
+      }
+
+      // Use resolvedGroups (not stale state) for group name resolution
+      const loaded = await pullAllItems(sid, resolvedGroups, items, token)
       setItems(loaded)
       setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
       showSync('synced', `✓ ${loaded.length} items loaded`)
