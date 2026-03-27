@@ -68,9 +68,8 @@ body{
   background:var(--bg);
   color:var(--ink);
   height:100%;
+  /* Do NOT use position:fixed — it breaks iOS child scroll */
   overflow:hidden;
-  /* Prevent iOS bounce on body but allow child scroll */
-  position:fixed;width:100%;
 }
 #root{height:100%;}
 button,input,textarea,select{font-family:'Space Grotesk',sans-serif;}
@@ -209,7 +208,7 @@ button{cursor:pointer;}
 .g-btn.connected{border-color:var(--success);color:var(--success);background:var(--success-lt);}
 
 /* ── MAIN ─────────────────────────────────────── */
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;}
 
 .topbar{
   display:none;
@@ -251,9 +250,8 @@ button{cursor:pointer;}
 /* ── PAGE ─────────────────────────────────────── */
 .page{
   display:flex;flex-direction:column;
-  flex:1;overflow:hidden;min-height:0;
-  /* iOS Safari fix: ensure children can scroll */
-  position:relative;
+  flex:1;min-height:0;
+  overflow:hidden;
 }
 .ph{
   padding:22px 24px 0;flex-shrink:0;
@@ -328,11 +326,16 @@ button{cursor:pointer;}
 .cs{
   flex:1;
   overflow-y:auto;
+  overflow-x:hidden;
   padding:14px 24px 40px;
   -webkit-overflow-scrolling:touch;
-  overscroll-behavior:contain;
+  /* iOS Safari: must have explicit height or min-height:0 for scroll */
+  min-height:0;
 }
-@media(max-width:600px){.cs{padding:10px 14px 90px;}}
+@media(max-width:600px){
+  .cs{padding:10px 14px 100px;}
+}
+
 
 /* ── ITEM GRID ─────────────────────────────────── */
 .item-grid{

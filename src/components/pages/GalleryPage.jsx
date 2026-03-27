@@ -134,7 +134,7 @@ export default function GalleryPage({ groupId, sheetId, groups, items: ownerItem
   const displayToken  = token || null   // null for guests — DriveImage falls back to emoji
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg)' }}>
 
       {/* Header */}
       <div className="gallery-header" style={{ flexShrink: 0 }}>
@@ -163,7 +163,7 @@ export default function GalleryPage({ groupId, sheetId, groups, items: ownerItem
       )}
 
       {/* Scrollable content */}
-      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', minHeight: 0 }}>
 
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 12, color: 'var(--ink3)' }}>
