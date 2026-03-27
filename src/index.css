@@ -552,6 +552,8 @@ select.fi{appearance:none;cursor:pointer;}
 .ai-label{font-size:8px;font-weight:700;color:var(--neon2);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px;font-family:'JetBrains Mono',monospace;}
 .ai-text{font-size:12px;color:var(--ink2);line-height:1.6;}
 .ai-loading{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink3);}
+.ai-bg-info{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.06);}
+.ai-bg-swatch{width:20px;height:20px;border-radius:6px;border:2px solid rgba(255,255,255,.15);flex-shrink:0;}
 
 /* Size pills */
 .size-wrap{display:flex;flex-wrap:wrap;gap:4px;}
