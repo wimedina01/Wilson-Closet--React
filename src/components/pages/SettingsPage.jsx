@@ -330,7 +330,7 @@ export default function SettingsPage({
             fontWeight: 700, marginBottom: 4,
           }}>Wilson Closet</div>
           <div style={{ fontSize: 10, color: 'var(--ink3)', fontFamily: 'JetBrains Mono,monospace', lineHeight: 1.8 }}>
-            Version 2.0 · © 2025<br/>
+            Version 2.1 · © 2025<br/>
             Developed by <span style={{ color: 'var(--neon2)' }}>Wilson Medina</span><br/>
             <span style={{ opacity: .6 }}>Powered by Claude AI · Anthropic</span>
           </div>

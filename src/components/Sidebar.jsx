@@ -5,7 +5,7 @@ export default function Sidebar({ groups, items, gToken, gUser, activePage, acti
     <nav className={`sidebar ${isOpen ? 'open' : ''}`}>
       <div className="sb-logo">
         <div className="sb-logo-text">Wilson Closet</div>
-        <div className="sb-logo-sub">Wardrobe OS v2.0</div>
+        <div className="sb-logo-sub">Wardrobe OS v2.1</div>
       </div>
 
       <div className="sb-user" onClick={onGoogleAuth}>
@@ -72,7 +72,7 @@ export default function Sidebar({ groups, items, gToken, gUser, activePage, acti
             Developed by <span style={{ color: 'var(--neon2)', fontWeight: 600 }}>Wilson Medina</span>
           </div>
           <div style={{ fontSize: 8, color: 'var(--ink3)', fontFamily: 'JetBrains Mono,monospace', opacity: .6 }}>
-            v2.0 · 2025 · Powered by Claude AI
+            v2.1 · 2025 · Powered by Claude AI
           </div>
         </div>
       </div>

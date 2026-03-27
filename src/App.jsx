@@ -476,6 +476,7 @@ export default function App() {
             notifications={notifications}
             onUpdate={setNotifications}
             items={items}
+            token={gToken}
             onViewItem={item => { setDetailItem(item); setPage('wardrobe') }}
           />
           )}

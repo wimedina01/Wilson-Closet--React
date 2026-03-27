@@ -1,15 +1,6 @@
 /**
  * POST /.netlify/functions/request
- * Guest sends an item request. This function:
- * 1. Stores the request in a shared KV store (Netlify Blobs)
- * 2. Sends an email to the owner via their Gmail OAuth token
- *    (token is passed from the share URL — owner embeds it)
- *
- * Since we can't use Netlify Blobs without extra setup,
- * we store requests in the Google Sheet's "Requests" tab.
- * The owner's app polls this tab for new notifications.
- *
- * Body: { ownerEmail, ownerSheetId, items[], requesterName, requesterEmail, message }
+ * Guest sends item request → stores in sheet + emails owner with item images
  */
 export default async function handler(request) {
   if (request.method === 'OPTIONS') {
@@ -34,7 +25,6 @@ export default async function handler(request) {
   // ── 1. Store notification in Google Sheet "Requests" tab
   if (sheetId && sheetToken) {
     try {
-      // Ensure Requests tab exists
       const meta = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties`,
         { headers: { Authorization: `Bearer ${sheetToken}` } }
@@ -47,7 +37,6 @@ export default async function handler(request) {
           headers: { Authorization: `Bearer ${sheetToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ requests: [{ addSheet: { properties: { title: 'Requests' } } }] })
         })
-        // Header row
         await fetch(
           `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent('Requests!A1')}?valueInputOption=RAW`,
           { method: 'PUT', headers: { Authorization: `Bearer ${sheetToken}`, 'Content-Type': 'application/json' },
@@ -55,14 +44,12 @@ export default async function handler(request) {
         )
       }
 
-      // Append the request row
       const notifId = 'n' + Date.now() + Math.random().toString(36).slice(2)
       const row = [
         notifId,
         items.map(i => i.id).join('|'),
         items.map(i => i.name).join(', '),
-        requesterName,
-        requesterEmail,
+        requesterName, requesterEmail,
         message || '',
         new Date().toISOString(),
         'false'
@@ -78,31 +65,105 @@ export default async function handler(request) {
     }
   }
 
-  // ── 2. Send email via Gmail API using owner's token
+  // ── 2. Send HTML email with item images
   if (sheetToken && ownerEmail) {
     try {
-      const itemLines = items.map(item =>
-        `• ${item.name}${item.size ? ' (Size ' + item.size + ')' : ''}${item.location ? ' — ' + item.location : ''}`
-      ).join('\n')
-
       const subject = `Wilson Closet: ${items.length} item${items.length > 1 ? 's' : ''} requested by ${requesterName}`
-      const emailBody = [
-        `${requesterName} (${requesterEmail}) has requested:`,
-        '',
-        itemLines,
-        '',
-        message ? `Message: "${message}"` : '',
-        '',
-        '— Wilson Closet App',
-      ].filter(l => l !== null).join('\n')
 
-      const raw = btoa(unescape(encodeURIComponent([
+      // Build HTML email with item cards including images
+      const itemCards = items.map(item => {
+        const imgHtml = item.drivePhotoUrl
+          ? `<img src="${item.drivePhotoUrl}" alt="${item.name}" width="120" height="120" style="width:120px;height:120px;object-fit:cover;border-radius:8px;display:block;"/>`
+          : `<div style="width:120px;height:120px;background:#1A1A2E;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:40px;">${getCatEmoji(item.category)}</div>`
+
+        return `
+          <tr>
+            <td style="padding:12px 0;border-bottom:1px solid #2E2E38;vertical-align:top;">
+              <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td width="136" style="padding-right:16px;vertical-align:top;">${imgHtml}</td>
+                  <td style="vertical-align:top;">
+                    <div style="font-size:11px;color:#7B5FFF;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${item.category || ''}</div>
+                    <div style="font-size:16px;font-weight:700;color:#F0EEFF;margin-bottom:6px;">${item.name}</div>
+                    ${item.brand ? `<div style="font-size:12px;color:#8B89A8;margin-bottom:3px;">Brand: ${item.brand}</div>` : ''}
+                    ${item.size ? `<div style="font-size:12px;color:#8B89A8;margin-bottom:3px;">Size: ${item.size}</div>` : ''}
+                    ${item.location ? `<div style="font-size:12px;color:#8B89A8;">📍 ${item.location}</div>` : ''}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>`
+      }).join('')
+
+      const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#050508;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#050508;min-height:100vh;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;width:100%;">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#0F0F18,#161622);border:1px solid #2E2E38;border-radius:20px 20px 0 0;padding:28px 28px 20px;text-align:center;">
+            <div style="font-size:24px;font-weight:700;background:linear-gradient(135deg,#A78BFF,#00E5FF);-webkit-background-clip:text;color:#A78BFF;margin-bottom:6px;">Wilson Closet</div>
+            <div style="font-size:12px;color:#5C5A6E;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">v2.1 · Item Request</div>
+          </td>
+        </tr>
+
+        <!-- Request info -->
+        <tr>
+          <td style="background:#0F0F18;border-left:1px solid #2E2E38;border-right:1px solid #2E2E38;padding:20px 28px 0;">
+            <div style="background:#1A1A2E;border:1px solid rgba(123,95,255,.2);border-radius:12px;padding:16px 18px;margin-bottom:20px;">
+              <div style="font-size:11px;color:#7B5FFF;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📨 New Request</div>
+              <div style="font-size:16px;font-weight:700;color:#F0EEFF;margin-bottom:4px;">${requesterName}</div>
+              <div style="font-size:12px;color:#8B89A8;">${requesterEmail}</div>
+              ${message ? `<div style="font-size:13px;color:#9997AA;margin-top:10px;font-style:italic;padding-top:10px;border-top:1px solid #2E2E38;">"${message}"</div>` : ''}
+            </div>
+
+            <div style="font-size:11px;color:#5C5A6E;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">
+              ${items.length} Item${items.length > 1 ? 's' : ''} Requested
+            </div>
+          </td>
+        </tr>
+
+        <!-- Items -->
+        <tr>
+          <td style="background:#0F0F18;border-left:1px solid #2E2E38;border-right:1px solid #2E2E38;padding:0 28px;">
+            <table cellpadding="0" cellspacing="0" border="0" width="100%">
+              ${itemCards}
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#0A0A10;border:1px solid #2E2E38;border-top:none;border-radius:0 0 20px 20px;padding:20px 28px;text-align:center;">
+            <div style="font-size:11px;color:#4A4860;line-height:1.8;">
+              Developed by Wilson Medina · v2.1 · 2025<br>
+              Powered by Claude AI · Anthropic
+            </div>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+      // Gmail API requires base64url encoded RFC 2822 message
+      const emailMsg = [
         `To: ${ownerEmail}`,
         `Subject: ${subject}`,
-        'Content-Type: text/plain; charset=utf-8',
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=utf-8',
         '',
-        emailBody,
-      ].join('\n')))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+        html,
+      ].join('\r\n')
+
+      const raw = btoa(unescape(encodeURIComponent(emailMsg)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
       const emailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
         method: 'POST',
@@ -124,10 +185,14 @@ export default async function handler(request) {
   return json(results, 200)
 }
 
+function getCatEmoji(cat) {
+  const map = { Tops:'👕', Bottoms:'👖', Dresses:'👗', Outerwear:'🧥', Shoes:'👟', Accessories:'👜' }
+  return map[cat] || '📦'
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...cors() },
+    status, headers: { 'Content-Type': 'application/json', ...cors() },
   })
 }
 function cors() {
