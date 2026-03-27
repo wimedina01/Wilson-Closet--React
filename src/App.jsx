@@ -1,0 +1,581 @@
+import { useState, useEffect, useCallback, useRef } from 'react'
+
+// Lib
+import { ls }                          from './lib/storage.js'
+import { CLIENT_ID, DEFAULT_GROUPS, DEFAULT_LOCATIONS, SHEET_HDR } from './lib/constants.js'
+import { setExpiredCallback, resetFolderCache } from './lib/drive.js'
+import {
+  ensureSheetHeader, ensureSettingsTab, pullSettings, pushSettings,
+  pullAllItems, upsertItem, deleteItem as deleteSheetItem,
+  pushAllItems, listSpreadsheets, createSpreadsheet, checkForChanges, formatSheet,
+} from './lib/sheets.js'
+
+// Hooks
+import { useToast }  from './hooks/useToast.js'
+import { useSync }   from './hooks/useSync.js'
+
+// Components
+import ToastContainer      from './components/Toast.jsx'
+import SyncBar             from './components/SyncBar.jsx'
+import Sidebar             from './components/Sidebar.jsx'
+import ItemGrid            from './components/ItemGrid.jsx'
+import ItemDetail          from './components/ItemDetail.jsx'
+import AddItemModal        from './components/AddItemModal.jsx'
+import SheetPicker         from './components/SheetPicker.jsx'
+import GroupModal          from './components/GroupModal.jsx'
+import LoanModal           from './components/LoanModal.jsx'
+import SharePage           from './components/pages/SharePage.jsx'
+import NotificationsPage   from './components/pages/NotificationsPage.jsx'
+import SettingsPage        from './components/pages/SettingsPage.jsx'
+import GalleryPage         from './components/pages/GalleryPage.jsx'
+
+// ── Helpers
+function tryParse(s, fb) { try { return s ? JSON.parse(s) : fb } catch { return fb } }
+
+function sheetNameFor(gUser) {
+  if (gUser?.name) {
+    const f = gUser.name.trim().split(' ')[0]
+    return f.toLowerCase().endsWith('s') ? `${f}' Closet` : `${f}'s Closet`
+  }
+  return 'Wilson Closet'
+}
+
+// ── Parse shared gallery URL
+// Format: #gallery/{groupId}/{sheetId}/{ownerToken}/{ownerEmail}
+function parseGalleryHash() {
+  const h = location.hash
+  if (!h.startsWith('#gallery/')) return {}
+  const parts = h.replace('#gallery/', '').split('/')
+  return {
+    groupId:    parts[0] || null,
+    sheetId:    parts[1] || null,
+    ownerToken: parts[2] || null,
+    ownerEmail: decodeURIComponent(parts[3] || ''),
+  }
+}
+function getGalleryId()      { return parseGalleryHash().groupId }
+function getGallerySheetId() { return parseGalleryHash().sheetId }
+
+export default function App() {
+  // ── Persistent state (localStorage-backed)
+  const [items,         setItems]         = useState(() => tryParse(ls.get('wc_items'),  []))
+  const [groups,        setGroups]        = useState(() => tryParse(ls.get('wc_groups'), null) || DEFAULT_GROUPS)
+  const [notifications, setNotifications] = useState(() => tryParse(ls.get('wc_notifs'), []))
+  const [locations,     setLocations]     = useState(() => tryParse(ls.get('wc_locs'),   null) || DEFAULT_LOCATIONS)
+  const [gToken,        setGToken]        = useState(() => ls.get('wc_token')   || null)
+  const [gUser,         setGUser]         = useState(() => tryParse(ls.get('wc_user'),   null))
+  const [sheetId,       setSheetId]       = useState(() => ls.get('wc_sheetid') || null)
+  const [clientId]                        = useState(() => ls.get('wc_clientid') || CLIENT_ID)
+
+  // ── UI state
+  const [page,          setPage]          = useState(() => getGalleryId() ? 'gallery' : 'wardrobe')
+  const [activeGroup,   setActiveGroup]   = useState('all')
+  const [sidebarOpen,   setSidebarOpen]   = useState(false)
+  const [syncState,     setSyncState]     = useState(null)   // 'syncing' | 'synced' | 'error' | null
+  const [syncText,      setSyncText]      = useState('')
+  const [lastSync,      setLastSync]      = useState('')
+
+  // ── Modal state
+  const [detailItem,    setDetailItem]    = useState(null)
+  const [editItem,      setEditItem]      = useState(null)    // null = add, item = edit
+  const [showAddModal,  setShowAddModal]  = useState(false)
+  const [showPicker,    setShowPicker]    = useState(false)
+  const [showGroup,     setShowGroup]     = useState(false)
+  const [loanItem,      setLoanItem]      = useState(null)
+  const [galleryId]                       = useState(getGalleryId)
+  const [gallerySheetId]                  = useState(getGallerySheetId)
+  const [galleryOwnerToken]               = useState(() => parseGalleryHash().ownerToken)
+  const [galleryOwnerEmail]               = useState(() => parseGalleryHash().ownerEmail)
+
+  const { toasts, toast } = useToast()
+  const pendingItems = useRef([])  // items saved offline
+
+  // ── Sync status helpers
+  const showSync = useCallback((state, text) => { setSyncState(state); setSyncText(text) }, [])
+  const hideSync = useCallback(() => setSyncState(null), [])
+
+  // ── Persist whenever state changes
+  useEffect(() => { ls.setJ('wc_items',  items)         }, [items])
+  useEffect(() => { ls.setJ('wc_groups', groups)        }, [groups])
+  useEffect(() => { ls.setJ('wc_notifs', notifications) }, [notifications])
+  useEffect(() => { ls.setJ('wc_locs',   locations)     }, [locations])
+
+  // ── Unread badge
+  const unreadCount = notifications.filter(n => !n.read).length
+
+  // ── Handle token expiry (called by drive.js when 401 received)
+  useEffect(() => {
+    setExpiredCallback(() => {
+      setGToken(null); setGUser(null)
+      ls.rm('wc_token'); ls.rm('wc_user')
+      toast('Session expired — please sign in again', 'error')
+    })
+  }, [toast])
+
+  // ── Handle clear-all event from SettingsPage
+  useEffect(() => {
+    const handler = () => { setItems([]); toast('All local items cleared') }
+    window.addEventListener('wc-clear-all', handler)
+    return () => window.removeEventListener('wc-clear-all', handler)
+  }, [toast])
+
+  // ── OAuth return handler (runs once on mount)
+  useEffect(() => {
+    const hash = location.hash
+    if (!hash.includes('access_token')) return
+    const p = new URLSearchParams(hash.slice(1))
+    const t = p.get('access_token')
+    if (!t) return
+    setGToken(t); ls.set('wc_token', t)
+    setSheetId(null); ls.rm('wc_sheetid')  // always search fresh on new login
+    resetFolderCache()
+    history.replaceState(null, '', location.pathname)
+    fetchGoogleUser(t)
+  }, []) // eslint-disable-line
+
+  // ── On load with existing token — connect to sheet
+  useEffect(() => {
+    if (!gToken || !sheetId) return
+    // Validate token optimistically — errors handled by setExpiredCallback
+    loadSheet(gToken, sheetId)
+  }, []) // eslint-disable-line
+
+  // ── Background sync hook
+  // ── Real-time notification polling via Netlify poll function
+  const lastNotifCheck = useRef(new Date(Date.now() - 24*60*60*1000).toISOString())
+  useEffect(() => {
+    if (!gToken || !sheetId) return
+    const pollNotifs = async () => {
+      try {
+        const since = encodeURIComponent(lastNotifCheck.current)
+        const res = await fetch(`/.netlify/functions/poll?sheet=${sheetId}&token=${gToken}&since=${since}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.notifications?.length) {
+          lastNotifCheck.current = new Date().toISOString()
+          const newNotifs = data.notifications.map(n => ({
+            id:        n.id,
+            itemId:    n.itemIds?.[0] || '',
+            itemIds:   n.itemIds || [],
+            itemName:  n.itemName,
+            from:      n.from,
+            fromEmail: n.fromEmail,
+            message:   n.message,
+            read:      false,
+            at:        n.at,
+          }))
+          setNotifications(prev => {
+            const existingIds = new Set(prev.map(x => x.id))
+            const fresh = newNotifs.filter(n => !existingIds.has(n.id))
+            if (!fresh.length) return prev
+            toast(`📨 ${fresh.length} new request${fresh.length > 1 ? 's' : ''}!`, 'info')
+            return [...fresh, ...prev]
+          })
+        }
+      } catch {}
+    }
+    const interval = setInterval(pollNotifs, 15000)
+    pollNotifs() // immediate first check
+    return () => clearInterval(interval)
+  }, [gToken, sheetId, toast])
+
+  const { bgSync } = useSync({
+    gToken, sheetId, items, groups,
+    onUpdate: newItems => {
+      setItems(newItems)
+      setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+    },
+    onStatus: showSync,
+    toast,
+  })
+
+  // ── Fetch Google user info
+  async function fetchGoogleUser(token) {
+    try {
+      const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Auth failed')
+      const u = await res.json()
+      if (u.error) throw new Error(u.error.message)
+      const user = { email: u.email, name: u.name, picture: u.picture }
+      setGUser(user); ls.setJ('wc_user', user)
+      toast('Signed in as ' + (u.name || u.email), 'success')
+      // Always show picker on fresh sign-in — no auto-detection
+      setShowPicker(true)
+    } catch (e) {
+      toast('Sign-in failed: ' + e.message, 'error')
+    }
+  }
+
+  // ── Load data from selected sheet
+  async function loadSheet(token, sid) {
+    showSync('syncing', 'Loading wardrobe…')
+    try {
+      await ensureSheetHeader(sid, token)
+      await ensureSettingsTab(sid, token)
+      const settings = await pullSettings(sid, token)
+      if (settings.groups    && Array.isArray(settings.groups))    { setGroups(settings.groups);       ls.setJ('wc_groups', settings.groups) }
+      if (settings.locations && Array.isArray(settings.locations)) { setLocations(settings.locations); ls.setJ('wc_locs',   settings.locations) }
+      const loaded = await pullAllItems(sid, groups, items, token)
+      setItems(loaded)
+      setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+      showSync('synced', `✓ ${loaded.length} items loaded`)
+      setTimeout(hideSync, 2500)
+      // Format sheet in background (non-blocking)
+      formatSheet(sid, token).catch(() => {})
+      // Flush offline items
+      if (pendingItems.current.length) {
+        for (const it of pendingItems.current) await upsertItem(sid, it, groups, token)
+        toast(`✓ ${pendingItems.current.length} offline items synced`, 'success')
+        pendingItems.current = []
+      }
+    } catch (e) {
+      showSync('error', 'Load failed: ' + e.message)
+      setTimeout(hideSync, 3000)
+    }
+  }
+
+  // ── Sheet selected from picker
+  async function onSheetSelected({ id, name }) {
+    setSheetId(id); ls.set('wc_sheetid', id)
+    setShowPicker(false)
+    toast(`✓ Connected to "${name}"`, 'success')
+    await loadSheet(gToken, id)
+  }
+
+  // ── Google auth
+  function launchOAuth() {
+    const scopes = [
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/drive.file',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/gmail.send',
+    ].join(' ')
+    const uri = location.origin + location.pathname
+    const p = new URLSearchParams({ client_id: clientId, redirect_uri: uri, response_type: 'token', scope: scopes, prompt: 'consent' })
+    location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + p
+  }
+
+  function disconnectGoogle() {
+    if (!confirm('Disconnect Google? Items stay saved locally.')) return
+    setGToken(null); setGUser(null); setSheetId(null)
+    ls.rm('wc_token'); ls.rm('wc_user'); ls.rm('wc_sheetid'); ls.rm('wc_folderid')
+    resetFolderCache()
+    toast('Disconnected from Google')
+  }
+
+  function toggleGoogleAuth() {
+    if (gToken) { disconnectGoogle(); return }
+    launchOAuth()
+  }
+
+  // ── Save item (add or edit)
+  async function handleSaveItem(item) {
+    setItems(prev => {
+      const idx = prev.findIndex(i => i.id === item.id)
+      return idx >= 0 ? prev.map(i => i.id === item.id ? item : i) : [item, ...prev]
+    })
+    setShowAddModal(false)
+    setDetailItem(null)
+    setEditItem(null)
+    toast(editItem ? 'Item updated!' : 'Item added!', 'success')
+
+    if (gToken) {
+      const sid = sheetId
+      if (sid) {
+        showSync('syncing', 'Saving to sheet…')
+        try {
+          await upsertItem(sid, item, groups, gToken)
+          item.sheetSynced = true
+          setItems(prev => prev.map(i => i.id === item.id ? { ...i, sheetSynced: true } : i))
+          showSync('synced', '✓ Saved & synced')
+          setTimeout(hideSync, 2500)
+        } catch {
+          showSync('error', 'Saved locally — sync failed')
+          setTimeout(hideSync, 3000)
+          pendingItems.current.push(item)
+        }
+      } else {
+        pendingItems.current.push(item)
+        setShowPicker(true)
+      }
+    } else {
+      pendingItems.current.push(item)
+    }
+  }
+
+  // ── Delete item
+  async function handleDeleteItem(id) {
+    if (!confirm('Remove this item?')) return
+    if (gToken && sheetId) {
+      showSync('syncing', 'Deleting…')
+      try {
+        await deleteSheetItem(sheetId, id, gToken)
+        hideSync()
+      } catch {
+        showSync('error', 'Delete failed — try again')
+        setTimeout(hideSync, 3000)
+        return
+      }
+    }
+    setItems(prev => prev.filter(i => i.id !== id))
+    setDetailItem(null)
+    toast('Item removed')
+  }
+
+  // ── Pull now
+  async function pullNow() {
+    if (!gToken)  { toast('Connect Google to sync', 'error'); return }
+    if (!sheetId) { setShowPicker(true); return }
+    await loadSheet(gToken, sheetId)
+  }
+
+  // ── Push all
+  async function pushAll() {
+    if (!gToken || !sheetId) { toast('Connect Google and select a sheet first', 'error'); return }
+    showSync('syncing', `Syncing ${items.length} items…`)
+    try {
+      await pushAllItems(sheetId, items, groups, gToken)
+      setItems(prev => prev.map(i => ({ ...i, sheetSynced: true })))
+      showSync('synced', `✓ ${items.length} items synced!`)
+      setTimeout(hideSync, 3000)
+    } catch (e) {
+      showSync('error', 'Sync failed: ' + e.message)
+      setTimeout(hideSync, 3000)
+    }
+  }
+
+  // ── Navigation helpers
+  function goGroup(gid) {
+    setActiveGroup(gid)
+    setPage('wardrobe')
+    setSidebarOpen(false)
+  }
+  function goPage(p) {
+    setPage(p)
+    setSidebarOpen(false)
+  }
+  function goCat(cat) {
+    // Handled inside ItemGrid — just navigate to wardrobe
+    setPage('wardrobe')
+    setSidebarOpen(false)
+  }
+
+  // ── If viewing a shared gallery, render just that
+  if (page === 'gallery' && galleryId) {
+    return (
+      <>
+        <ToastContainer toasts={toasts} />
+        <GalleryPage
+          groupId={galleryId}
+          sheetId={gallerySheetId || sheetId}
+          ownerToken={galleryOwnerToken}
+          ownerEmail={galleryOwnerEmail}
+          groups={groups}
+          items={items}
+          token={gToken} gToken={gToken} gUser={gUser}
+        />
+      </>
+    )
+  }
+
+  const activeGroupObj = groups.find(g => g.id === activeGroup)
+
+  return (
+    <>
+      <ToastContainer toasts={toasts} />
+
+      <div className="shell">
+        {/* Sidebar */}
+        <Sidebar
+          groups={groups} items={items}
+          gToken={gToken} gUser={gUser}
+          activePage={page} activeGroup={activeGroup}
+          onPage={goPage} onGroup={goGroup} onCat={goCat}
+          onGoogleAuth={toggleGoogleAuth}
+          onAddGroup={() => setShowGroup(true)}
+          isOpen={sidebarOpen}
+        />
+
+        {/* Mobile overlay */}
+        <div
+          className={`mob-overlay ${sidebarOpen ? 'show' : ''}`}
+          onClick={() => setSidebarOpen(false)}
+        />
+
+        <main className="main">
+          {/* Mobile topbar */}
+          <div className="topbar">
+            <button className="ib" onClick={() => setSidebarOpen(true)}>☰</button>
+            <div className="tb-logo">Wilson <em>Closet</em></div>
+            <button className="ib" onClick={() => goPage('notifications')} style={{ position: 'relative' }}>
+              🔔
+              {unreadCount > 0 && (
+                <span style={{ position: 'absolute', top: 4, right: 4, width: 7, height: 7, background: 'var(--danger)', borderRadius: '50%', border: '2px solid var(--surface)' }} />
+              )}
+            </button>
+          </div>
+
+          {/* Sync bar */}
+          <SyncBar state={syncState} text={syncText} />
+
+          {/* ── WARDROBE PAGE */}
+          {page === 'wardrobe' && (
+            <div className="page">
+              <div className="ph">
+                <div>
+                  <div className="ph-title">
+                    {activeGroup === 'all' ? 'All Items' : `${activeGroupObj?.emoji} ${activeGroupObj?.name}`}
+                  </div>
+                  <div className="ph-sub">Your complete wardrobe inventory</div>
+                </div>
+                <div className="ph-actions">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    id="sync-btn"
+                    onClick={gToken && !sheetId ? () => setShowPicker(true) : pullNow}
+                  >🔄 Sync</button>
+                  {lastSync && <span className="hide-mobile" style={{ fontSize: 10, color: 'var(--ink3)', fontFamily: 'JetBrains Mono,monospace' }}>Synced {lastSync}</span>}
+                  <button className="btn btn-secondary btn-sm hide-mobile" onClick={() => goPage('share')}>🔗 Share</button>
+                  <button className="btn btn-primary btn-sm hide-mobile" onClick={() => { setEditItem(null); setShowAddModal(true) }}>＋ Add Item</button>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div className="stats-row">
+                {[
+                  { val: items.length,                             lbl: 'Items',   color: 'var(--accent)' },
+                  { val: groups.length,                            lbl: 'Groups',  color: 'var(--accent)' },
+                  { val: items.filter(i => i.sheetSynced).length, lbl: 'Synced',  color: 'var(--success)' },
+                ].map(s => (
+                  <div key={s.lbl} className="stat-card">
+                    <div className="stat-val" style={{ color: s.color }}>{s.val}</div>
+                    <div className="stat-lbl">{s.lbl}</div>
+                  </div>
+                ))}
+              </div>
+
+              <ItemGrid
+                items={items} groups={groups} token={gToken}
+                activeGroup={activeGroup}
+                onSelectItem={setDetailItem}
+              />
+            </div>
+          )}
+
+          {/* ── SHARE PAGE */}
+          {page === 'share' && (
+            <SharePage groups={groups} items={items} toast={toast} sheetId={sheetId} gToken={gToken} gUser={gUser} />
+          )}
+
+          {/* ── NOTIFICATIONS PAGE */}
+          {page === 'notifications' && (
+            <NotificationsPage
+            notifications={notifications}
+            onUpdate={setNotifications}
+            items={items}
+            onViewItem={item => { setDetailItem(item); setPage('wardrobe') }}
+          />
+          )}
+
+          {/* ── SETTINGS PAGE */}
+          {page === 'settings' && (
+            <SettingsPage
+              gToken={gToken} gUser={gUser} sheetId={sheetId}
+              groups={groups} setGroups={setGroups}
+              locations={locations} setLocations={setLocations}
+              items={items}
+              onDisconnect={disconnectGoogle}
+              onOpenPicker={() => setShowPicker(true)}
+              onPushAll={pushAll}
+              onPullNow={pullNow}
+              toast={toast}
+            />
+          )}
+        </main>
+      </div>
+
+      {/* FAB */}
+      {page === 'wardrobe' && (
+        <button className="fab" onClick={() => { setEditItem(null); setShowAddModal(true) }}>＋</button>
+      )}
+
+      {/* Bottom Nav */}
+      <nav className="bnav">
+        <div className="bnav-inner">
+          {[
+            { id: 'wardrobe',      icon: '👗', label: 'Closet' },
+            { id: 'share',         icon: '🔗', label: 'Share' },
+            { id: 'notifications', icon: '🔔', label: 'Alerts' },
+            { id: 'settings',      icon: '⚙️', label: 'Settings' },
+          ].map(({ id, icon, label }) => (
+            <button key={id} className={`bni ${page === id ? 'active' : ''}`} onClick={() => goPage(id)}>
+              <div className="bni-icon">{icon}</div>
+              {label}
+              {id === 'notifications' && unreadCount > 0 && (
+                <span style={{ fontSize: 8, background: 'var(--danger)', color: '#fff', borderRadius: 99, padding: '1px 4px', position: 'absolute' }}>
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {/* ── MODALS */}
+
+      {/* Item Detail */}
+      {detailItem && (
+        <ItemDetail
+          item={detailItem} groups={groups} token={gToken}
+          onClose={() => setDetailItem(null)}
+          onEdit={item => { setEditItem(item); setDetailItem(null); setShowAddModal(true) }}
+          onDelete={handleDeleteItem}
+          onLoan={item => { setDetailItem(null); setLoanItem(item) }}
+        />
+      )}
+
+      {/* Add / Edit Item */}
+      {showAddModal && (
+        <AddItemModal
+          item={editItem} groups={groups} locations={locations} token={gToken}
+          onSave={handleSaveItem}
+          onClose={() => { setShowAddModal(false); setEditItem(null) }}
+          toast={toast}
+        />
+      )}
+
+      {/* Sheet Picker */}
+      {showPicker && (
+        <SheetPicker
+          token={gToken} gUser={gUser}
+          onSelect={onSheetSelected}
+          onClose={() => setShowPicker(false)}
+          toast={toast}
+        />
+      )}
+
+      {/* Group Modal */}
+      {showGroup && (
+        <GroupModal
+          onSave={g => { setGroups(prev => [...prev, g]); toast(`"${g.name}" created!`, 'success') }}
+          onClose={() => setShowGroup(false)}
+        />
+      )}
+
+      {/* Loan Modal */}
+      {loanItem && (
+        <LoanModal
+          item={loanItem}
+          onSave={item => {
+            handleSaveItem(item)
+            toast(item.loanedTo ? `📤 Loaned to ${item.loanedTo}` : '✓ Marked as returned', 'success')
+          }}
+          onClose={() => setLoanItem(null)}
+        />
+      )}
+    </>
+  )
+}
