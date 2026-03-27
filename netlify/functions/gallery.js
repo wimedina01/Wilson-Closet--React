@@ -41,11 +41,15 @@ export default async function handler(request) {
         }
         const drivePhotoUrl = get('Photo URL') || null
         const fileId = drivePhotoUrl ? extractFileId(drivePhotoUrl) : null
+        // Use full absolute Netlify proxy URL so email clients can load images
+        const origin = 'https://wilsoncloset.netlify.app'
+        const driveThumb = fileId ? `${origin}/.netlify/functions/img?id=${fileId}` : null
         return {
           id:           get('ID'),
           name:         get('Name'),
           category:     get('Category') || 'Other',
-          group:        get('Group'),
+          group:        get('Group'),        // group name (for display)
+          groupId:      get('Group ID'),     // group ID (for filtering)
           brand:        get('Brand'),
           size:         get('Size'),
           colors:       get('Colors') ? get('Colors').split(', ').filter(Boolean) : [],
@@ -53,20 +57,22 @@ export default async function handler(request) {
           tags:         get('Tags') ? get('Tags').split(', ').filter(Boolean) : [],
           description:  get('Description'),
           drivePhotoUrl,
-          // Use proxy URL for cross-device image display
-          driveThumb:   fileId ? `/.netlify/functions/img?id=${fileId}` : null,
+          driveThumb,
           fileId,
           loanedTo:     get('On Loan To') || '',
+          loanLog:      get('Loan Log') || '',
           addedAt:      get('Date Added') || new Date().toISOString(),
           sheetSynced:  true,
           photo:        null,
         }
       })
-      // Filter by group name if groupId provided (groupId is the internal ID like g1)
-      // We can't filter by internal ID since sheet stores group names
-      // Return all items, let the client filter
 
-    return json({ items }, 200)
+    // Filter by groupId param — match by Group ID column first, fall back to group name
+    const filtered = groupId
+      ? items.filter(i => i.groupId === groupId || i.group === groupId)
+      : items
+
+    return json({ items: filtered }, 200)
   } catch (e) {
     return json({ error: e.message }, 500)
   }

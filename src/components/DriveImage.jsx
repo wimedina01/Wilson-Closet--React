@@ -42,14 +42,12 @@ export default function DriveImage({ item, token, className, style }) {
     }
 
     // Priority 3a: authenticated fetch (owner signed in)
+    // Show proxy thumb immediately while auth fetch runs (avoids blank flash)
     if (token && item.fileId) {
-      setSrc(null)
+      if (item.driveThumb) { setSrc(item.driveThumb); setFailed(false) }
       fetchDrivePhoto(item.fileId, token).then(url => {
         if (mounted.current && url) { setSrc(url); setFailed(false) }
-        else if (mounted.current && item.driveThumb) {
-          // Fallback to proxy if authenticated fetch fails
-          setSrc(item.driveThumb); setFailed(false)
-        }
+        // If auth fetch fails, proxy thumb is already showing — no action needed
       })
       return
     }

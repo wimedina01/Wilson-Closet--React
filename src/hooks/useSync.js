@@ -26,20 +26,19 @@ export function useSync({ gToken, sheetId, items, groups, onUpdateItems, onUpdat
     syncing.current = true
 
     try {
-      // 1. Check if items changed in sheet
+      // Always pull settings on every cycle — catches group/location changes from other devices
+      const settings = await pullSettings(sid, token)
+      onUpdateSettings(settings)
+
+      // Check if items changed in sheet
       const changed = await checkForChanges(sid, itemsRef.current, token)
       if (changed) {
-        // Pull settings first so group names resolve correctly in pullAllItems
-        const settings = await pullSettings(sid, token)
-        onUpdateSettings(settings)
-
-        // Small delay so React can process settings state update before we resolve groups
-        await new Promise(r => setTimeout(r, 50))
-
+        // Brief pause so React can flush settings state before we resolve group IDs
+        await new Promise(r => setTimeout(r, 30))
         const updated = await pullAllItems(sid, groupsRef.current, itemsRef.current, token)
         onUpdateItems(updated)
-        onStatus('synced', '✓ Updated — ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-        setTimeout(() => onStatus(null, ''), 3000)
+        onStatus('synced', '✓ ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+        setTimeout(() => onStatus(null, ''), 2000)
       }
     } catch (e) {
       console.warn('bgSync error:', e)

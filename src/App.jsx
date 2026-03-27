@@ -507,7 +507,13 @@ export default function App() {
           {page === 'settings' && (
             <SettingsPage
               gToken={gToken} gUser={gUser} sheetId={sheetId}
-              groups={groups} setGroups={setGroups}
+              groups={groups} setGroups={async updated => {
+                setGroups(updated)
+                ls.setJ('wc_groups', updated)
+                if (gToken && sheetId) {
+                  try { await pushSettings(sheetId, updated, locations, gToken); bgSync() } catch {}
+                }
+              }}
               locations={locations} setLocations={setLocations}
               items={items}
               onDisconnect={disconnectGoogle}
@@ -583,7 +589,19 @@ export default function App() {
       {/* Group Modal */}
       {showGroup && (
         <GroupModal
-          onSave={g => { setGroups(prev => [...prev, g]); toast(`"${g.name}" created!`, 'success') }}
+          onSave={async g => {
+            const updated = [...groups, g]
+            setGroups(updated)
+            ls.setJ('wc_groups', updated)
+            toast(`"${g.name}" created!`, 'success')
+            // Immediately push settings + trigger sync so other devices see the new group
+            if (gToken && sheetId) {
+              try {
+                await pushSettings(sheetId, updated, locations, gToken)
+                bgSync()
+              } catch {}
+            }
+          }}
           onClose={() => setShowGroup(false)}
         />
       )}

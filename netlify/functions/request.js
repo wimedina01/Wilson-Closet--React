@@ -72,9 +72,16 @@ export default async function handler(request) {
 
       // Build HTML email with item cards including images
       const itemCards = items.map(item => {
-        const imgHtml = item.drivePhotoUrl
-          ? `<img src="${item.drivePhotoUrl}" alt="${item.name}" width="120" height="120" style="width:120px;height:120px;object-fit:cover;border-radius:8px;display:block;"/>`
+        // Use Netlify proxy for image — Drive web URLs require auth, proxy serves publicly
+        const origin = 'https://wilsoncloset.netlify.app'
+        const imgSrc = item.fileId
+          ? `${origin}/.netlify/functions/img?id=${item.fileId}`
+          : null
+        const imgHtml = imgSrc
+          ? `<img src="${imgSrc}" alt="${item.name}" width="120" height="120" style="width:120px;height:120px;object-fit:cover;border-radius:8px;display:block;" />`
           : `<div style="width:120px;height:120px;background:#1A1A2E;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:40px;">${getCatEmoji(item.category)}</div>`
+        // Deep link to the item in the app
+        const itemLink = `${origin}/#item/${item.id}`
 
         return `
           <tr>
@@ -84,7 +91,7 @@ export default async function handler(request) {
                   <td width="136" style="padding-right:16px;vertical-align:top;">${imgHtml}</td>
                   <td style="vertical-align:top;">
                     <div style="font-size:11px;color:#7B5FFF;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${item.category || ''}</div>
-                    <div style="font-size:16px;font-weight:700;color:#F0EEFF;margin-bottom:6px;">${item.name}</div>
+                    <a href="${itemLink}" style="font-size:16px;font-weight:700;color:#A78BFF;margin-bottom:6px;display:block;text-decoration:none;">${item.name} ↗</a>
                     ${item.brand ? `<div style="font-size:12px;color:#8B89A8;margin-bottom:3px;">Brand: ${item.brand}</div>` : ''}
                     ${item.size ? `<div style="font-size:12px;color:#8B89A8;margin-bottom:3px;">Size: ${item.size}</div>` : ''}
                     ${item.location ? `<div style="font-size:12px;color:#8B89A8;">📍 ${item.location}</div>` : ''}

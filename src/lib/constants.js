@@ -6,7 +6,7 @@ export const SHEET_HDR    = [
   'ID','Name','Category','Group','Group ID','Brand','Size','Colors',
   'Location','Tags','Description','Photo URL','Photo Preview','Date Added','On Loan To','Loan Log'
 ]
-export const POLL_MS = 20000   // 20s — faster for real-time feel
+export const POLL_MS = 5000    // 5s — near real-time
 
 // Drive folder names
 export const APP_FOLDER_NAME     = 'Wilson Closet'

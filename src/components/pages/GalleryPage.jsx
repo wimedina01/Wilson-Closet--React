@@ -56,13 +56,9 @@ export default function GalleryPage({ groupId, sheetId, ownerToken, ownerEmail, 
 
       // Guest items come with group NAME (not ID) from the sheet
       // Match by group name if we have group info, otherwise show all
-      let filtered = data.items || []
-      if (g) {
-        filtered = filtered.filter(i =>
-          i.group.toLowerCase() === g.name.toLowerCase()
-        )
-      }
-      setItems(filtered)
+      // Items are already filtered server-side by groupId
+      // No client-side filter needed — gallery.js handles it
+      setItems(data.items || [])
     } catch (e) {
       setFetchErr('Could not load items: ' + e.message)
     }
@@ -104,6 +100,7 @@ export default function GalleryPage({ groupId, sheetId, ownerToken, ownerEmail, 
             size:         i.size || '',
             location:     i.location || '',
             drivePhotoUrl: i.drivePhotoUrl || '',
+            fileId:       i.fileId || '',
           })),
           requesterName:  reqName,
           requesterEmail: reqEmail,
