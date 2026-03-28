@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import DriveImage from '../DriveImage.jsx'
-import { ls } from '../../lib/storage.js'
 
 /**
  * GalleryPage — public-facing shared closet view.

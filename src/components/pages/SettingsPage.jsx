@@ -61,7 +61,7 @@ export default function SettingsPage({ isInstalled, onInstall,
     const rows = items.map(i => {
       const g = groups.find(x => x.id === i.group)
       return [i.name,i.category,g?.name||'—',i.brand||'',i.size||'',i.location||'',
-        i.colors.join('; '),i.tags.join('; '),(i.description||'').replace(/,/g,';'),
+        (i.colors||[]).join('; '),(i.tags||[]).join('; '),(i.description||'').replace(/,/g,';'),
         i.loanedTo||'',new Date(i.addedAt).toLocaleDateString()
       ].map(v=>`"${String(v).replace(/"/g,'""')}"`)
     })
@@ -361,7 +361,7 @@ export default function SettingsPage({ isInstalled, onInstall,
             fontWeight: 700, marginBottom: 4,
           }}>Wilson Closet</div>
           <div style={{ fontSize: 10, color: 'var(--ink3)', fontFamily: 'JetBrains Mono,monospace', lineHeight: 1.8 }}>
-            Version 2.1 · © 2025<br/>
+            Version 2.3 · © 2025<br/>
             Developed by <span style={{ color: 'var(--neon2)' }}>Wilson Medina</span><br/>
             <span style={{ opacity: .6 }}>Powered by Claude AI · Anthropic</span>
           </div>

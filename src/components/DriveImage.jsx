@@ -47,8 +47,7 @@ export default function DriveImage({ item, token, className, style }) {
       if (item.driveThumb) { setSrc(item.driveThumb); setFailed(false) }
       fetchDrivePhoto(item.fileId, token).then(url => {
         if (mounted.current && url) { setSrc(url); setFailed(false) }
-        // If auth fetch fails, proxy thumb is already showing — no action needed
-      })
+      }).catch(() => {})
       return
     }
 

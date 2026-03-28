@@ -57,18 +57,18 @@ export default function ItemDetail({ item, groups, token, onClose, onEdit, onDel
             ))}
           </div>
 
-          {item.colors.length > 0 && (
+          {(item.colors || []).length > 0 && (
             <div style={{ marginBottom: 10 }}>
               <div className="d-field-lbl" style={{ marginBottom: 6 }}>Colors</div>
               <div className="d-colors">
-                {item.colors.map(name => {
+                {(item.colors || []).map(name => {
                   const col = COLORS.find(c => c.n === name)
                   return col ? <div key={name} className="d-clr" title={name} style={{ background: col.h }} /> : null
                 })}
               </div>
             </div>
           )}
-          {item.tags.length > 0 && <div className="d-tags">{item.tags.map(t => <span key={t} className="tp">{t}</span>)}</div>}
+          {(item.tags || []).length > 0 && <div className="d-tags">{(item.tags || []).map(t => <span key={t} className="tp">{t}</span>)}</div>}
 
           {item.drivePhotoUrl && (
             <div style={{ marginBottom: 8 }}>

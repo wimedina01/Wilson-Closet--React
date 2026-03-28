@@ -34,7 +34,6 @@ export default function SheetPicker({ token, gUser, onSelect, onClose, toast }) 
     setCreating(true)
     try {
       const name = sheetName(gUser)
-      const { createSpreadsheet: cs, ensureSheetHeader: esh } = await import('../lib/sheets.js')
       const id = await createSpreadsheet(name, token)
       // Write headers
       await fetch(
@@ -73,7 +72,11 @@ export default function SheetPicker({ token, gUser, onSelect, onClose, toast }) 
   async function handleApply() {
     if (!selected) return
     setApplying(true)
-    onSelect(selected)
+    try {
+      onSelect(selected)
+    } finally {
+      setApplying(false)
+    }
   }
 
   return (

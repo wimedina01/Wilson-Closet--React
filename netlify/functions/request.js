@@ -114,7 +114,7 @@ export default async function handler(request) {
         <tr>
           <td style="background:linear-gradient(135deg,#0F0F18,#161622);border:1px solid #2E2E38;border-radius:20px 20px 0 0;padding:28px 28px 20px;text-align:center;">
             <div style="font-size:24px;font-weight:700;background:linear-gradient(135deg,#A78BFF,#00E5FF);-webkit-background-clip:text;color:#A78BFF;margin-bottom:6px;">Wilson Closet</div>
-            <div style="font-size:12px;color:#5C5A6E;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">v2.1 · Item Request</div>
+            <div style="font-size:12px;color:#5C5A6E;font-family:monospace;letter-spacing:1px;text-transform:uppercase;">v2.3 · Item Request</div>
           </td>
         </tr>
 
@@ -147,7 +147,7 @@ export default async function handler(request) {
         <tr>
           <td style="background:#0A0A10;border:1px solid #2E2E38;border-top:none;border-radius:0 0 20px 20px;padding:20px 28px;text-align:center;">
             <div style="font-size:11px;color:#4A4860;line-height:1.8;">
-              Developed by Wilson Medina · v2.1 · 2025<br>
+              Developed by Wilson Medina · v2.3 · 2025<br>
               Powered by Claude AI · Anthropic
             </div>
           </td>

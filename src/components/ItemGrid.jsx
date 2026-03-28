@@ -15,8 +15,8 @@ export default function ItemGrid({ items, groups, token, activeGroup, onSelectIt
       || item.name.toLowerCase().includes(q)
       || (item.brand || '').toLowerCase().includes(q)
       || item.category.toLowerCase().includes(q)
-      || item.colors.some(c => c.toLowerCase().includes(q))
-      || item.tags.some(t => t.toLowerCase().includes(q))
+      || (item.colors || []).some(c => c.toLowerCase().includes(q))
+      || (item.tags || []).some(t => t.toLowerCase().includes(q))
     return gm && cm && sm
   }), [items, activeGroup, activeCat, query])
 

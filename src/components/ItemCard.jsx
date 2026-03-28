@@ -4,7 +4,7 @@ import { COLORS } from '../lib/constants.js'
 function ColorPips({ colors, max = 4 }) {
   return (
     <div className="cpips">
-      {colors.slice(0, max).map(name => {
+      {(colors || []).slice(0, max).map(name => {
         const col = COLORS.find(c => c.n === name)
         return col ? <div key={name} className="pip" title={name} style={{ background: col.h }} /> : null
       })}
@@ -46,9 +46,9 @@ export default function ItemCard({ item, onSelect, view, index, token }) {
           <div className="csz">{item.size || '—'}</div>
           <ColorPips colors={item.colors} />
         </div>
-        {item.tags.length > 0 && (
+        {(item.tags || []).length > 0 && (
           <div className="ctags">
-            {item.tags.slice(0, 2).map(t => <span key={t} className="tp">{t}</span>)}
+            {(item.tags || []).slice(0, 2).map(t => <span key={t} className="tp">{t}</span>)}
           </div>
         )}
       </div>

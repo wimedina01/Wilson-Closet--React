@@ -147,6 +147,23 @@ export default function App() {
   }, []) // eslint-disable-line
 
   // ── Background sync hook
+  const { bgSync } = useSync({
+    gToken, sheetId, items, groups,
+    onUpdateItems: newItems => {
+      setItems(newItems)
+      setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+    },
+    onUpdateSettings: settings => {
+      if (settings.groups    && Array.isArray(settings.groups)    && settings.groups.length)    {
+        setGroups(settings.groups); ls.setJ('wc_groups', settings.groups)
+      }
+      if (settings.locations && Array.isArray(settings.locations) && settings.locations.length) {
+        setLocations(settings.locations); ls.setJ('wc_locs', settings.locations)
+      }
+    },
+    onStatus: showSync,
+  })
+
   // ── PWA: online/offline detection + install prompt
   useEffect(() => {
     const goOnline  = () => { setIsOnline(true);  toast('Back online', 'success') }
@@ -214,24 +231,6 @@ export default function App() {
     pollNotifs() // immediate first check
     return () => clearInterval(interval)
   }, [gToken, sheetId, toast])
-
-  const { bgSync } = useSync({
-    gToken, sheetId, items, groups,
-    onUpdateItems: newItems => {
-      setItems(newItems)
-      setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-    },
-    onUpdateSettings: settings => {
-      // Apply settings pulled during background sync
-      if (settings.groups    && Array.isArray(settings.groups)    && settings.groups.length)    {
-        setGroups(settings.groups); ls.setJ('wc_groups', settings.groups)
-      }
-      if (settings.locations && Array.isArray(settings.locations) && settings.locations.length) {
-        setLocations(settings.locations); ls.setJ('wc_locs', settings.locations)
-      }
-    },
-    onStatus: showSync,
-  })
 
   // ── Fetch Google user info
   async function fetchGoogleUser(token) {

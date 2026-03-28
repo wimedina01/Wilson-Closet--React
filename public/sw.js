@@ -1,5 +1,5 @@
-const CACHE    = 'wc-v2.1'
-const IMG_CACHE = 'wc-img-v2.1'
+const CACHE    = 'wc-v2.3'
+const IMG_CACHE = 'wc-img-v2.3'
 
 self.addEventListener('install', e => {
   e.waitUntil(
