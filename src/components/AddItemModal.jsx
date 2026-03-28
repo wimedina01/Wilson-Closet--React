@@ -3,6 +3,7 @@ import { COLORS, TAGS_SUGGEST, CATEGORIES,
          SIZES_ADULT_CLOTHES, SIZES_KIDS_CLOTHES,
          SIZES_ADULT_SHOES,   SIZES_KIDS_SHOES } from '../lib/constants.js'
 import { compressPhoto, uploadToDrive } from '../lib/drive.js'
+import { replaceBackground } from '../lib/bgReplace.js'
 
 export default function AddItemModal({ item: editItem, groups, locations, token, onSave, onClose, toast }) {
   const isEdit = !!editItem
@@ -27,6 +28,10 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
   const [aiText,   setAiText]   = useState(editItem?.description || '')
   const [showAI,   setShowAI]   = useState(!!editItem?.description)
   const [saving,   setSaving]   = useState(false)
+  const [originalPhoto, setOriginalPhoto] = useState(null)
+  const [bgColor, setBgColor] = useState(null)
+  const [bgApplied, setBgApplied] = useState(false)
+  const [bgProcessing, setBgProcessing] = useState(false)
 
   const camRef = useRef(); const galRef = useRef()
 
@@ -37,20 +42,22 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
     reader.onload = async evt => {
       const { dataUrl, b64, mime } = await compressPhoto(evt.target.result)
       setPhoto(dataUrl); setPhotoB64(b64); setPhotoMime(mime)
+      setOriginalPhoto(dataUrl)
+      setBgApplied(false); setBgColor(null)
       setShowAI(true); setAiText('')
-      analyze(b64, mime)
+      analyze(b64, mime, dataUrl)
     }
     reader.readAsDataURL(file)
   }
 
-  async function analyze(b64, mime) {
+  async function analyze(b64, mime, photoDataUrl) {
     setAnalyzing(true); setAiText('Analyzing…')
     try {
       const res = await fetch('/.netlify/functions/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: [{ role: 'user', content: [
           { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-          { type: 'text',  text: 'Analyze this clothing or shoe item. Also try to identify the brand by examining logos, tags, or distinctive design elements. Respond with ONLY a raw JSON object:\n{"name":"4-6 word name","category":"Tops","brand":"identified brand or empty string","colors":["Black"],"description":"brief description","tags":["Casual"],"notes":""}' },
+          { type: 'text',  text: 'Analyze this clothing or shoe item. Also try to identify the brand by examining logos, tags, or distinctive design elements. Then pick a solid background color (hex) that would make the item pop and stand out — choose a complementary or contrasting color based on the item\'s dominant colors. Respond with ONLY a raw JSON object:\n{"name":"4-6 word name","category":"Tops","brand":"identified brand or empty string","colors":["Black"],"description":"brief description","tags":["Casual"],"notes":"","bgColor":"#E8D5B7"}' },
         ]}] }),
       })
       if (!res.ok) throw new Error('HTTP ' + res.status)
@@ -73,10 +80,41 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
         setColors(prev => [...new Set([...prev, ...matched])])
       }
       if (p.tags?.length) setTags(prev => [...new Set([...prev, ...p.tags])])
+
+      // Apply background replacement if AI suggested a color
+      if (p.bgColor && /^#[0-9a-fA-F]{6}$/.test(p.bgColor)) {
+        setBgColor(p.bgColor)
+        applyBackground(photoDataUrl || photo, p.bgColor)
+      }
+
       toast('AI analysis complete!', 'success')
     } catch (e) {
       setAiText('Analysis failed — fill in manually. (' + e.message.slice(0, 80) + ')')
     } finally { setAnalyzing(false) }
+  }
+
+  async function applyBackground(src, hex) {
+    if (!src || !hex) return
+    setBgProcessing(true)
+    try {
+      const result = await replaceBackground(src, hex)
+      setPhoto(result.dataUrl)
+      setPhotoB64(result.b64)
+      setPhotoMime(result.mime)
+      setBgApplied(true)
+      toast('Background replaced!', 'success')
+    } catch (e) {
+      console.warn('Background replacement failed:', e)
+    } finally { setBgProcessing(false) }
+  }
+
+  function revertBackground() {
+    if (!originalPhoto) return
+    setPhoto(originalPhoto)
+    const b64 = originalPhoto.split(',')[1]
+    setPhotoB64(b64)
+    setPhotoMime('image/jpeg')
+    setBgApplied(false)
   }
 
   async function handleSave() {
@@ -139,7 +177,7 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
               {photo ? (
                 <>
                   <img src={photo} alt="item" />
-                  {analyzing && <div className="pzone-loading"><div className="big-spin" /><p style={{ fontSize: 11, color: 'var(--ink2)' }}>AI analyzing…</p></div>}
+                  {(analyzing || bgProcessing) && <div className="pzone-loading"><div className="big-spin" /><p style={{ fontSize: 11, color: 'var(--ink2)' }}>{bgProcessing ? 'Enhancing background…' : 'AI analyzing…'}</p></div>}
                 </>
               ) : (
                 <>
@@ -148,10 +186,16 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
                 </>
               )}
             </div>
-            <div style={{ marginTop: 7, display: 'flex', gap: 6 }}>
+            <div style={{ marginTop: 7, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button className="btn btn-secondary btn-sm" onClick={() => camRef.current.click()}>📷 Camera</button>
               <button className="btn btn-secondary btn-sm" onClick={() => galRef.current.click()}>🖼 Gallery</button>
-              {photo && <button className="btn btn-ghost btn-sm" onClick={() => { setPhoto(null); setPhotoB64(null) }}>✕ Remove</button>}
+              {photo && <button className="btn btn-ghost btn-sm" onClick={() => { setPhoto(null); setPhotoB64(null); setOriginalPhoto(null); setBgApplied(false); setBgColor(null) }}>✕ Remove</button>}
+              {bgApplied && originalPhoto && (
+                <button className="btn btn-ghost btn-sm" onClick={revertBackground}>↩ Original</button>
+              )}
+              {!bgApplied && bgColor && originalPhoto && !bgProcessing && (
+                <button className="btn btn-secondary btn-sm" onClick={() => applyBackground(originalPhoto, bgColor)}>✦ Apply BG</button>
+              )}
             </div>
             <input ref={camRef} type="file" accept="image/*" capture="environment" onChange={onPhotoSelected} />
             <input ref={galRef} type="file" accept="image/*" onChange={onPhotoSelected} />
@@ -165,6 +209,14 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
                 <div className="ai-text">
                   {analyzing ? <div className="ai-loading"><div className="spinner" />&nbsp;Analyzing…</div> : (aiText || 'Analysis complete.')}
                 </div>
+                {bgColor && !analyzing && (
+                  <div className="ai-bg-info">
+                    <span className="ai-bg-swatch" style={{ background: bgColor }} />
+                    <span style={{ fontSize: 11, color: 'var(--ink2)' }}>
+                      {bgApplied ? 'Background enhanced' : bgProcessing ? 'Applying…' : 'Background color picked'}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}

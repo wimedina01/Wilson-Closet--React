@@ -3,8 +3,10 @@ export default async function handler(request) {
     return new Response('Method Not Allowed', { status: 405 })
   }
 
-  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
-  if (!ANTHROPIC_API_KEY) {
+  const apiKey  = process.env.ANTHROPIC_API_KEY
+  const baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com'
+
+  if (!apiKey) {
     return new Response(
       JSON.stringify({ error: { message: 'ANTHROPIC_API_KEY not set in Netlify environment variables.' } }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
@@ -21,16 +23,16 @@ export default async function handler(request) {
   }
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch(`${baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
+        'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model:      'claude-sonnet-4-20250514',
-        max_tokens: 600,
+        model:      body.model || 'claude-sonnet-4-20250514',
+        max_tokens: body.max_tokens || 600,
         messages:   body.messages,
       }),
     })
