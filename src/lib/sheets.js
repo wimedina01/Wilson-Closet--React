@@ -327,5 +327,12 @@ export async function createSpreadsheet(name, token) {
       headers: { Authorization: `Bearer ${token}` }
     })
   }
+
+  // Share: anyone with the link can view
+  await gPost(
+    `https://www.googleapis.com/drive/v3/files/${d.spreadsheetId}/permissions`,
+    { role: 'reader', type: 'anyone' }, token
+  )
+
   return d.spreadsheetId
 }
