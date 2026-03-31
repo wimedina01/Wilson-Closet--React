@@ -57,7 +57,7 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: [{ role: 'user', content: [
           { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-          { type: 'text',  text: 'Analyze this clothing or shoe item. Also try to identify the brand by examining logos, tags, or distinctive design elements. Then pick a solid background color (hex) that would make the item pop and stand out — choose a complementary or contrasting color based on the item\'s dominant colors. Respond with ONLY a raw JSON object:\n{"name":"4-6 word name","category":"Tops","brand":"identified brand or empty string","colors":["Black"],"description":"brief description","tags":["Casual"],"notes":"","bgColor":"#E8D5B7"}' },
+          { type: 'text',  text: 'Analyze this clothing or shoe item. Also try to identify the brand by examining logos, tags, or distinctive design elements. Then pick a solid background color (hex) that would make the item pop and stand out — choose a complementary or contrasting color based on the item\'s dominant colors. For category, you MUST use exactly one of these values: Tops, Bottoms, Dresses, Outerwear, Shoes, Accessories, Other. Respond with ONLY a raw JSON object:\n{"name":"4-6 word name","category":"Tops|Bottoms|Dresses|Outerwear|Shoes|Accessories|Other","brand":"identified brand or empty string","colors":["Black"],"description":"brief description","tags":["Casual"],"notes":"","bgColor":"#E8D5B7"}' },
         ]}] }),
       })
       if (!res.ok) throw new Error('HTTP ' + res.status)
@@ -69,7 +69,19 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
       const p = JSON.parse(match[0])
 
       if (p.name && !name)        setName(p.name)
-      if (p.category)             setCat(p.category)
+      if (p.category) {
+        const exact = CATEGORIES.find(c => c.toLowerCase() === p.category.toLowerCase())
+        if (exact) {
+          setCat(exact)
+        } else {
+          // Map common AI responses to valid categories
+          const lower = p.category.toLowerCase()
+          const mapped = CATEGORIES.find(c =>
+            lower.includes(c.toLowerCase()) || c.toLowerCase().includes(lower)
+          ) || 'Other'
+          setCat(mapped)
+        }
+      }
       if (p.brand && !brand)      setBrand(p.brand)
       if (p.notes && !desc)       setDesc(p.notes)
       if (p.description)          setAiText(p.description)
