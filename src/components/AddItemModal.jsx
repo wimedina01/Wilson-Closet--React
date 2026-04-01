@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { COLORS, TAGS_SUGGEST, CATEGORIES,
          SIZES_ADULT_CLOTHES, SIZES_KIDS_CLOTHES,
          SIZES_ADULT_SHOES,   SIZES_KIDS_SHOES } from '../lib/constants.js'
@@ -33,7 +33,82 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
   const [bgApplied, setBgApplied] = useState(false)
   const [bgProcessing, setBgProcessing] = useState(false)
 
+  // Batch mode state
+  const [batchMode, setBatchMode] = useState(false)
+  const [batchCount, setBatchCount] = useState(0)
+  const [quantity, setQuantity] = useState(1)
+
+  // Live camera state
+  const [cameraActive, setCameraActive] = useState(false)
+  const [cameraError, setCameraError] = useState(null)
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+  const canvasRef = useRef(null)
+
   const camRef = useRef(); const galRef = useRef()
+
+  // Stop camera stream on unmount or when camera is closed
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+    }
+    setCameraActive(false)
+    setCameraError(null)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+      }
+    }
+  }, [])
+
+  async function startCamera() {
+    setCameraError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 960 } },
+        audio: false
+      })
+      streamRef.current = stream
+      setCameraActive(true)
+      // Wait for videoRef to be available after state update
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+        }
+      })
+    } catch (e) {
+      setCameraError('Camera not available')
+      // Fall back to file input
+      camRef.current?.click()
+    }
+  }
+
+  function capturePhoto() {
+    if (!videoRef.current || !canvasRef.current) return
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(video, 0, 0)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+    const b64 = dataUrl.split(',')[1]
+    const mime = 'image/jpeg'
+    stopCamera()
+    processPhoto(dataUrl, b64, mime)
+  }
+
+  function processPhoto(dataUrl, b64, mime) {
+    setPhoto(dataUrl); setPhotoB64(b64); setPhotoMime(mime)
+    setOriginalPhoto(dataUrl)
+    setBgApplied(false); setBgColor(null)
+    setShowAI(true); setAiText('')
+    analyze(b64, mime, dataUrl)
+  }
 
   async function onPhotoSelected(e) {
     const file = e.target.files[0]; if (!file) return
@@ -41,11 +116,7 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
     const reader = new FileReader()
     reader.onload = async evt => {
       const { dataUrl, b64, mime } = await compressPhoto(evt.target.result)
-      setPhoto(dataUrl); setPhotoB64(b64); setPhotoMime(mime)
-      setOriginalPhoto(dataUrl)
-      setBgApplied(false); setBgColor(null)
-      setShowAI(true); setAiText('')
-      analyze(b64, mime, dataUrl)
+      processPhoto(dataUrl, b64, mime)
     }
     reader.readAsDataURL(file)
   }
@@ -131,17 +202,44 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
       if (dr) { drivePhotoUrl = dr.viewUrl; driveThumb = dr.directUrl; fileId = dr.fileId }
     }
 
-    onSave({
-      id: editItem?.id || 'wc' + Date.now(),
-      name: name.trim(), category: cat,
-      group, brand, location, size, loanedTo,
-      colors, tags, description: desc,
-      photo, drivePhotoUrl, driveThumb, fileId,
-      sheetSynced: false,
-      addedAt:   editItem?.addedAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    })
-    setSaving(false)
+    // In batch mode, save multiple items with the same size
+    const qty = batchMode ? Math.max(1, Math.min(quantity, 50)) : 1
+    for (let i = 0; i < qty; i++) {
+      const suffix = qty > 1 ? ` (${i + 1})` : ''
+      onSave({
+        id: 'wc' + Date.now() + (i > 0 ? '_' + i : ''),
+        name: name.trim() + suffix, category: cat,
+        group, brand, location, size, loanedTo,
+        colors, tags, description: desc,
+        photo, drivePhotoUrl, driveThumb, fileId,
+        sheetSynced: false,
+        addedAt:   editItem?.addedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+    }
+
+    if (batchMode) {
+      setBatchCount(prev => prev + qty)
+      toast(`Added ${qty} item${qty > 1 ? 's' : ''} (${batchCount + qty} total)`, 'success')
+      // Reset form for next batch item but keep size, group, category, location
+      const keepSize = size
+      const keepGroup = group
+      const keepCat = cat
+      const keepLocation = location
+      const keepSizeType = sizeType
+      setName(''); setBrand(''); setDesc('')
+      setColors([]); setTags([]); setLoanedTo('')
+      setPhoto(null); setPhotoB64(null); setOriginalPhoto(null)
+      setBgApplied(false); setBgColor(null)
+      setShowAI(false); setAiText('')
+      setSize(keepSize); setGroup(keepGroup)
+      setCat(keepCat); setLocation(keepLocation)
+      setSizeType(keepSizeType)
+      setQuantity(1)
+      setSaving(false)
+    } else {
+      setSaving(false)
+    }
   }
 
   function onTagKey(e) {
@@ -165,40 +263,82 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
       <div className="modal">
         <div className="modal-handle" />
         <div className="modal-header">
-          <div className="modal-title">{isEdit ? '✏️ Edit Item' : '＋ Add Item'}</div>
-          <button className="ib" onClick={onClose}>✕</button>
+          <div className="modal-title">
+            {isEdit ? '✏️ Edit Item' : batchMode ? `＋ Batch Add (${batchCount} added)` : '＋ Add Item'}
+          </div>
+          <button className="ib" onClick={() => { stopCamera(); onClose() }}>✕</button>
         </div>
         <div className="modal-body">
 
-          {/* Photo */}
+          {/* Batch mode toggle - only show for new items */}
+          {!isEdit && (
+            <div className="fg">
+              <div className="batch-toggle">
+                <button
+                  className={`btn btn-sm ${batchMode ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setBatchMode(!batchMode)}
+                >
+                  {batchMode ? '✓ Batch Mode ON' : '↻ Enable Batch Mode'}
+                </button>
+                <span style={{ fontSize: 10, color: 'var(--ink3)' }}>
+                  {batchMode ? 'Add multiple items — size & category stay locked' : 'Add many items of the same size quickly'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Photo / Live Camera */}
           <div className="fg">
             <label className="fl">Photo</label>
-            <div className={`pzone ${photo ? 'has-photo' : ''}`} onClick={!photo ? () => galRef.current.click() : undefined}>
-              {photo ? (
-                <>
-                  <img src={photo} alt="item" />
-                  {(analyzing || bgProcessing) && <div className="pzone-loading"><div className="big-spin" /><p style={{ fontSize: 11, color: 'var(--ink2)' }}>{bgProcessing ? 'Enhancing background…' : 'AI analyzing…'}</p></div>}
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: 28, opacity: .3 }}>📷</div>
-                  <div style={{ fontSize: 11, color: 'var(--ink3)' }}>Tap to choose photo — AI fills details</div>
-                </>
-              )}
-            </div>
-            <div style={{ marginTop: 7, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => camRef.current.click()}>📷 Camera</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => galRef.current.click()}>🖼 Gallery</button>
-              {photo && <button className="btn btn-ghost btn-sm" onClick={() => { setPhoto(null); setPhotoB64(null); setOriginalPhoto(null); setBgApplied(false); setBgColor(null) }}>✕ Remove</button>}
-              {bgApplied && originalPhoto && (
-                <button className="btn btn-ghost btn-sm" onClick={revertBackground}>↩ Original</button>
-              )}
-              {!bgApplied && bgColor && originalPhoto && !bgProcessing && (
-                <button className="btn btn-secondary btn-sm" onClick={() => applyBackground(originalPhoto, bgColor)}>✦ Apply BG</button>
-              )}
-            </div>
+            {cameraActive ? (
+              <div className="camera-live">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="camera-video"
+                />
+                <canvas ref={canvasRef} style={{ display: 'none' }} />
+                <div className="camera-controls">
+                  <button className="btn btn-ghost btn-sm" onClick={stopCamera}>✕ Cancel</button>
+                  <button className="camera-shutter" onClick={capturePhoto}>
+                    <div className="shutter-inner" />
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => galRef.current.click()}>🖼</button>
+                </div>
+              </div>
+            ) : (
+              <div className={`pzone ${photo ? 'has-photo' : ''}`} onClick={!photo ? () => startCamera() : undefined}>
+                {photo ? (
+                  <>
+                    <img src={photo} alt="item" />
+                    {(analyzing || bgProcessing) && <div className="pzone-loading"><div className="big-spin" /><p style={{ fontSize: 11, color: 'var(--ink2)' }}>{bgProcessing ? 'Enhancing background…' : 'AI analyzing…'}</p></div>}
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 28, opacity: .3 }}>📷</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink3)' }}>Tap to open camera — AI fills details</div>
+                  </>
+                )}
+              </div>
+            )}
+            {!cameraActive && (
+              <div style={{ marginTop: 7, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button className="btn btn-secondary btn-sm" onClick={startCamera}>📷 Camera</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => galRef.current.click()}>🖼 Gallery</button>
+                {photo && <button className="btn btn-ghost btn-sm" onClick={() => { setPhoto(null); setPhotoB64(null); setOriginalPhoto(null); setBgApplied(false); setBgColor(null) }}>✕ Remove</button>}
+                {bgApplied && originalPhoto && (
+                  <button className="btn btn-ghost btn-sm" onClick={revertBackground}>↩ Original</button>
+                )}
+                {!bgApplied && bgColor && originalPhoto && !bgProcessing && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => applyBackground(originalPhoto, bgColor)}>✦ Apply BG</button>
+                )}
+              </div>
+            )}
             <input ref={camRef} type="file" accept="image/*" capture="environment" onChange={onPhotoSelected} />
             <input ref={galRef} type="file" accept="image/*" onChange={onPhotoSelected} />
+            {cameraError && <div style={{ fontSize: 10, color: 'var(--danger)', marginTop: 4 }}>{cameraError}</div>}
           </div>
 
           {/* AI result */}
@@ -261,7 +401,10 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
 
           {/* Size — adult / kids toggle */}
           <div className="fg">
-            <label className="fl">Size</label>
+            <label className="fl">
+              Size
+              {batchMode && size && <span style={{ color: 'var(--neon)', fontSize: 10, marginLeft: 6 }}>LOCKED for batch</span>}
+            </label>
             {/* Size type toggle */}
             <div style={{ display: 'flex', gap: 5, marginBottom: 8 }}>
               {['adult','kids'].map(t => (
@@ -282,6 +425,19 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
               onChange={e => setSize(e.target.value)}
               placeholder="Or type custom size…" />
           </div>
+
+          {/* Batch quantity */}
+          {batchMode && (
+            <div className="fg">
+              <label className="fl">Quantity</label>
+              <div className="batch-qty">
+                <button className="btn btn-secondary btn-sm" onClick={() => setQuantity(q => Math.max(1, q - 1))}>−</button>
+                <span className="batch-qty-val">{quantity}</span>
+                <button className="btn btn-secondary btn-sm" onClick={() => setQuantity(q => Math.min(50, q + 1))}>+</button>
+                <span style={{ fontSize: 10, color: 'var(--ink3)', marginLeft: 8 }}>items with this size</span>
+              </div>
+            </div>
+          )}
 
           {/* Colors */}
           <div className="fg">
@@ -327,9 +483,11 @@ export default function AddItemModal({ item: editItem, groups, locations, token,
         </div>
 
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-secondary" onClick={() => { stopCamera(); onClose() }}>
+            {batchMode && batchCount > 0 ? 'Done' : 'Cancel'}
+          </button>
           <button className="btn btn-primary" style={{ flex:1, justifyContent:'center' }} onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save Item'}
+            {saving ? 'Saving…' : batchMode ? `Add ${quantity > 1 ? quantity + ' Items' : 'Item'} & Continue` : 'Save Item'}
           </button>
         </div>
       </div>
