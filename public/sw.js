@@ -1,5 +1,6 @@
-const CACHE    = 'wc-v2.1'
-const IMG_CACHE = 'wc-img-v2.1'
+const CACHE    = 'wc-v2.5'
+const IMG_CACHE = 'wc-img-v2.5'
+const APP_VERSION = '2.5.0'
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -69,4 +70,11 @@ async function imgCache(req) {
 
 self.addEventListener('sync', e => {
   if (e.tag === 'wc-sync') e.waitUntil(self.clients.matchAll().then(cs => cs.forEach(c => c.postMessage({ type: 'SYNC_NOW' }))))
+})
+
+// Listen for skip waiting message from the app (for update flow)
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
 })

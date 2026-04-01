@@ -56,7 +56,33 @@ function parseGalleryHash() {
 function getGalleryId()      { return parseGalleryHash().groupId }
 function getGallerySheetId() { return parseGalleryHash().sheetId }
 
+// ── Wake Lock — keep screen on for mobile
+function useWakeLock() {
+  const wakeLockRef = useRef(null)
+
+  const requestWakeLock = useCallback(async () => {
+    if (!('wakeLock' in navigator)) return
+    try {
+      wakeLockRef.current = await navigator.wakeLock.request('screen')
+      wakeLockRef.current.addEventListener('release', () => { wakeLockRef.current = null })
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    requestWakeLock()
+    const onVis = () => { if (document.visibilityState === 'visible') requestWakeLock() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      wakeLockRef.current?.release().catch(() => {})
+    }
+  }, [requestWakeLock])
+}
+
 export default function App() {
+  // ── Wake Lock — keep screen on
+  useWakeLock()
+
   // ── Persistent state (localStorage-backed)
   const [items,         setItems]         = useState(() => tryParse(ls.get('wc_items'),  []))
   const [groups,        setGroups]        = useState(() => tryParse(ls.get('wc_groups'), null) || DEFAULT_GROUPS)
@@ -108,6 +134,11 @@ export default function App() {
   const [installReady,  setInstallReady]  = useState(() => !!window._installPrompt)
   const [installed,     setInstalled]     = useState(false)
   const [showInstall,   setShowInstall]   = useState(false)
+
+  // ── App update state
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [updating, setUpdating]               = useState(false)
+  const swRegistrationRef = useRef(null)
 
   // ── Handle token expiry (called by drive.js when 401 received)
   useEffect(() => {
@@ -194,6 +225,57 @@ export default function App() {
     if (outcome === 'accepted') { window._installPrompt = null; setInstallReady(false) }
     setShowInstall(false)
   }
+
+  // ── App update handler
+  function applyUpdate() {
+    setUpdating(true)
+    const reg = swRegistrationRef.current
+    if (reg?.waiting) {
+      reg.waiting.postMessage({ type: 'SKIP_WAITING' })
+    }
+  }
+
+  function dismissUpdate() {
+    setUpdateAvailable(false)
+  }
+
+  // ── Listen for SW controller change → reload
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    let refreshing = false
+    const onControllerChange = () => {
+      if (refreshing) return
+      refreshing = true
+      window.location.reload()
+    }
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
+    return () => navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
+  }, [])
+
+  // ── Detect SW updates
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    navigator.serviceWorker.getRegistration().then(reg => {
+      if (!reg) return
+      swRegistrationRef.current = reg
+
+      const trackInstalling = (sw) => {
+        sw.addEventListener('statechange', () => {
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+            setUpdateAvailable(true)
+          }
+        })
+      }
+
+      if (reg.waiting && navigator.serviceWorker.controller) {
+        setUpdateAvailable(true)
+      }
+      if (reg.installing) trackInstalling(reg.installing)
+      reg.addEventListener('updatefound', () => {
+        if (reg.installing) trackInstalling(reg.installing)
+      })
+    })
+  }, [])
 
   // ── Real-time notification polling via Netlify poll function
   const lastNotifCheck = useRef(new Date(Date.now() - 24*60*60*1000).toISOString())
@@ -462,6 +544,22 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Update available banner */}
+      {updateAvailable && (
+        <div className="update-banner">
+          <div className="update-banner-icon">🔄</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Update Available</div>
+            <div style={{ fontSize: 11, color: 'var(--ink3)' }}>A new version of Wilson Closet is ready</div>
+          </div>
+          <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
+            <button className="btn btn-ghost btn-sm" onClick={dismissUpdate} style={{ padding: '5px 8px' }}>Later</button>
+            <button className="btn btn-primary btn-sm" onClick={applyUpdate} disabled={updating}>
+              {updating ? 'Updating…' : 'Update Now'}
+            </button>
+          </div>
+        </div>
+      )}
         <GalleryPage
           groupId={galleryId}
           sheetId={gallerySheetId || sheetId}
@@ -514,6 +612,23 @@ export default function App() {
           <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
             <button className="btn btn-ghost btn-sm" onClick={() => setShowInstall(false)} style={{ padding: '5px 8px' }}>Later</button>
             <button className="btn btn-primary btn-sm" onClick={triggerInstall}>Install</button>
+          </div>
+        </div>
+      )}
+
+      {/* Update available banner */}
+      {updateAvailable && (
+        <div className="update-banner">
+          <div className="update-banner-icon">🔄</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Update Available</div>
+            <div style={{ fontSize: 11, color: 'var(--ink3)' }}>A new version of Wilson Closet is ready</div>
+          </div>
+          <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
+            <button className="btn btn-ghost btn-sm" onClick={dismissUpdate} style={{ padding: '5px 8px' }}>Later</button>
+            <button className="btn btn-primary btn-sm" onClick={applyUpdate} disabled={updating}>
+              {updating ? 'Updating…' : 'Update Now'}
+            </button>
           </div>
         </div>
       )}
