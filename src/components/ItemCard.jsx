@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import DriveImage from './DriveImage.jsx'
 import { COLORS } from '../lib/constants.js'
 
@@ -12,10 +13,10 @@ function ColorPips({ colors, max = 4 }) {
   )
 }
 
-export default function ItemCard({ item, onSelect, view, index, token }) {
+export default memo(function ItemCard({ item, onSelect, view, index, token }) {
   if (view === 'list') {
     return (
-      <div className="lcard" style={{ animationDelay: `${index * .03}s` }} onClick={() => onSelect(item)}>
+      <div className="lcard" style={{ animationDelay: `${Math.min(index * .03, .6)}s` }} onClick={() => onSelect(item)}>
         <DriveImage item={item} token={token} className="lt" style={{ fontSize: 20 }} />
         <div className="lb">
           <div className="ln">{item.name}</div>
@@ -35,7 +36,7 @@ export default function ItemCard({ item, onSelect, view, index, token }) {
   }
 
   return (
-    <div className="card" style={{ animationDelay: `${index * .035}s` }} onClick={() => onSelect(item)}>
+    <div className="card" style={{ animationDelay: `${Math.min(index * .035, .6)}s` }} onClick={() => onSelect(item)}>
       <DriveImage item={item} token={token} className="card-img" style={{ fontSize: 44 }} />
       {item.loanedTo && <div className="loan-badge">📤 On Loan</div>}
       {item.drivePhotoUrl && <div className="cdot" title="Synced to Drive" />}
@@ -54,4 +55,4 @@ export default function ItemCard({ item, onSelect, view, index, token }) {
       </div>
     </div>
   )
-}
+})
