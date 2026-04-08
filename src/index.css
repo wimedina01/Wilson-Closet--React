@@ -2,7 +2,7 @@
    WILSON CLOSET — FUTURISTIC DESIGN SYSTEM
    Inspired by: holographic glass, neon accents, deep space
 ═══════════════════════════════════════════════════════ */
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap');
+/* Fonts loaded via index.html <link> tags for non-blocking render */
 
 :root {
   /* Core palette — deep space dark */

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 
 // Lib
 import { ls }                          from './lib/storage.js'
@@ -25,9 +25,9 @@ import SheetPicker         from './components/SheetPicker.jsx'
 import GroupModal          from './components/GroupModal.jsx'
 import LoanModal           from './components/LoanModal.jsx'
 import SharePage           from './components/pages/SharePage.jsx'
-import NotificationsPage   from './components/pages/NotificationsPage.jsx'
-import SettingsPage        from './components/pages/SettingsPage.jsx'
-import GalleryPage         from './components/pages/GalleryPage.jsx'
+const NotificationsPage = lazy(() => import('./components/pages/NotificationsPage.jsx'))
+const SettingsPage      = lazy(() => import('./components/pages/SettingsPage.jsx'))
+const GalleryPage       = lazy(() => import('./components/pages/GalleryPage.jsx'))
 
 // ── Helpers
 function tryParse(s, fb) { try { return s ? JSON.parse(s) : fb } catch { return fb } }
@@ -462,6 +462,7 @@ export default function App() {
           </div>
         </div>
       )}
+        <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'var(--ink3)', fontSize: 12 }}>Loading…</div>}>
         <GalleryPage
           groupId={galleryId}
           sheetId={gallerySheetId || sheetId}
@@ -471,6 +472,7 @@ export default function App() {
           items={items}
           token={gToken} gToken={gToken} gUser={gUser}
         />
+        </Suspense>
       </>
     )
   }
@@ -604,6 +606,7 @@ export default function App() {
 
           {/* ── NOTIFICATIONS PAGE */}
           {page === 'notifications' && (
+            <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'var(--ink3)', fontSize: 12 }}>Loading…</div>}>
             <NotificationsPage
             notifications={notifications}
             onUpdate={setNotifications}
@@ -611,10 +614,12 @@ export default function App() {
             token={gToken}
             onViewItem={item => { setDetailItem(item); setPage('wardrobe') }}
           />
+            </Suspense>
           )}
 
           {/* ── SETTINGS PAGE */}
           {page === 'settings' && (
+            <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'var(--ink3)', fontSize: 12 }}>Loading…</div>}>
             <SettingsPage
               gToken={gToken} gUser={gUser} sheetId={sheetId}
               isInstalled={installed}
@@ -634,6 +639,7 @@ export default function App() {
               onPullNow={pullNow}
               toast={toast}
             />
+            </Suspense>
           )}
         </main>
       </div>

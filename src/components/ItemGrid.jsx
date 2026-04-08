@@ -21,7 +21,7 @@ export default function ItemGrid({ items, groups, token, activeGroup, onSelectIt
   }), [items, activeGroup, activeCat, query])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, flex: 1, minHeight: 0 }}>
       {/* Toolbar */}
       <div className="toolbar">
         <div className="search-box">

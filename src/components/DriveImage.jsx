@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { fetchDrivePhoto, getCachedPhoto } from '../lib/drive.js'
 import { CAT_EMOJI } from '../lib/constants.js'
 
@@ -10,7 +10,7 @@ import { CAT_EMOJI } from '../lib/constants.js'
  * 3b. no token        — use item.driveThumb (Netlify proxy URL, works publicly for guests)
  * 4. emoji fallback   — never a black box
  */
-export default function DriveImage({ item, token, className, style }) {
+export default memo(function DriveImage({ item, token, className, style }) {
   const getInitialSrc = () => {
     if (item.photo) return item.photo
     if (item.fileId) {
@@ -84,4 +84,4 @@ export default function DriveImage({ item, token, className, style }) {
       />
     </div>
   )
-}
+})
